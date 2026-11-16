@@ -55,6 +55,8 @@ export function ExperienceTimeline() {
               <img
                 src={PORTFOLIO_ASSETS.storyWorkbench}
                 alt="Mechanical calipers, dark keyboard, espresso cup, and system architecture workstation"
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover object-center"
               />

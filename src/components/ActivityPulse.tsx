@@ -90,6 +90,8 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
                 <img
                   src={PORTFOLIO_ASSETS.choreosLogo}
                   alt="Choreos Labs emblem"
+                  loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   className="w-10 h-10 rounded-lg object-cover border border-zinc-200 dark:border-zinc-800"
                 />
@@ -129,6 +131,8 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
               style={{ scale: choreosImageScale }}
               src={PORTFOLIO_ASSETS.choreosShowcase}
               alt="Choreos Labs Inference tactical cognitive game view"
+              loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />
@@ -213,6 +217,8 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
                   <img
                     src={snap.imageUrl}
                     alt={snap.title}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03] ${
                       idx === 0 ? 'object-center' : 'object-top'

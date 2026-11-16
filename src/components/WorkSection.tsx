@@ -106,6 +106,8 @@ export function WorkSection() {
               <img
                 src={project.imageUrl}
                 alt={project.title}
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
               />

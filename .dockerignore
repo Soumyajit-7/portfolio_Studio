@@ -1,0 +1,11 @@
+.git
+.gitignore
+.aistudio
+.env
+node_modules
+dist
+firestore.rules.test.ts
+security_spec.md
+eslint.config.mjs
+*.md
+*.log

@@ -53,6 +53,11 @@ async function startServer() {
     return next(err);
   });
 
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
@@ -122,8 +127,28 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
+    app.use(
+      express.static(distPath, {
+        etag: true,
+        lastModified: true,
+        setHeaders(res, filePath) {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+          } else if (
+            filePath.includes(`${path.sep}assets${path.sep}`) &&
+            /\.(js|css)$/.test(filePath)
+          ) {
+            // Content-hashed Vite JS/CSS bundles can be cached indefinitely at Cloudflare & browser edge
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          } else if (/\.(webp|jpg|jpeg|png|svg|woff2|pdf)$/i.test(filePath)) {
+            // Cache static images, fonts & CV for 30 days on Cloudflare CDN & browser
+            res.setHeader('Cache-Control', 'public, max-age=2592000');
+          }
+        },
+      })
+    );
     app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
