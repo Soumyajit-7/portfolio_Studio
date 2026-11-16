@@ -1,0 +1,180 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'soumyajit.scms@gmail.com' ||
+        request.auth.token.email == 'soumyajit.biswas.14444@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidInquiry(data) {
+      return data.keys().hasAll([
+        'ownerUid', 'senderName', 'senderEmail', 'company', 'topic',
+        'message', 'status', 'adminNotes', 'sentViaGmail', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'senderName', 'senderEmail', 'company', 'topic',
+        'message', 'status', 'adminNotes', 'sentViaGmail', 'createdAt', 'updatedAt'
+      ])
+      && data.ownerUid is string && isValidId(data.ownerUid)
+      && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100
+      && data.senderEmail is string && data.senderEmail.size() >= 3 && data.senderEmail.size() <= 150
+      && data.company is string && data.company.size() <= 120
+      && data.topic is string && data.topic in ['Freelance Project', 'Working Student Role', 'AI & Data Consulting', 'General Inquiry']
+      && data.message is string && data.message.size() >= 5 && data.message.size() <= 2000
+      && data.status is string && data.status in ['new', 'reviewed', 'replied', 'archived']
+      && data.adminNotes is string && data.adminNotes.size() <= 1000
+      && data.sentViaGmail is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll([
+        'ownerUid', 'clientName', 'clientEmail', 'meetingType', 'date',
+        'timeSlot', 'timezone', 'notes', 'status', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'ownerUid', 'clientName', 'clientEmail', 'meetingType', 'date',
+        'timeSlot', 'timezone', 'notes', 'status', 'createdAt', 'updatedAt'
+      ])
+      && data.ownerUid is string && isValidId(data.ownerUid)
+      && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 100
+      && data.clientEmail is string && data.clientEmail.size() >= 3 && data.clientEmail.size() <= 150
+      && data.meetingType is string && data.meetingType in ['Freelance Discovery', 'Applied AI Consulting', 'Working Student Interview', 'Technical Mentorship']
+      && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      && data.timeSlot is string && data.timeSlot.size() >= 3 && data.timeSlot.size() <= 30
+      && data.timezone is string && data.timezone.size() >= 2 && data.timezone.size() <= 60
+      && data.notes is string && data.notes.size() <= 1000
+      && data.status is string && data.status in ['pending', 'confirmed', 'completed', 'cancelled']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidSocialUpdate(data) {
+      return data.keys().hasAll([
+        'platform', 'title', 'caption', 'dateLabel', 'externalUrl',
+        'category', 'authorUid', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'platform', 'title', 'caption', 'dateLabel', 'externalUrl',
+        'category', 'authorUid', 'createdAt', 'updatedAt'
+      ])
+      && data.platform is string && data.platform in ['instagram', 'linkedin']
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+      && data.caption is string && data.caption.size() >= 1 && data.caption.size() <= 1000
+      && data.dateLabel is string && data.dateLabel.size() >= 1 && data.dateLabel.size() <= 40
+      && data.externalUrl is string && data.externalUrl.size() >= 1 && data.externalUrl.size() <= 300
+      && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+      && data.authorUid is string && isValidId(data.authorUid)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    match /inquiries/{inquiryId} {
+      allow get: if isAdmin() || (isVerifiedUser() && existing().ownerUid == request.auth.uid);
+      allow list: if isAdmin() || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isVerifiedUser()
+        && isValidId(inquiryId)
+        && isValidInquiry(incoming())
+        && incoming().ownerUid == request.auth.uid
+        && incoming().status == 'new'
+        && incoming().adminNotes == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(inquiryId)
+        && isValidInquiry(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().ownerUid == request.auth.uid
+            && existing().status == 'new'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['message', 'topic', 'company', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(inquiryId);
+    }
+
+    match /appointments/{appointmentId} {
+      allow get: if isAdmin() || (isVerifiedUser() && existing().ownerUid == request.auth.uid);
+      allow list: if isAdmin() || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
+      allow create: if isVerifiedUser()
+        && isValidId(appointmentId)
+        && isValidAppointment(incoming())
+        && incoming().ownerUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(appointmentId)
+        && isValidAppointment(incoming())
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().ownerUid == request.auth.uid
+            && existing().status != 'completed'
+            && existing().status != 'cancelled'
+            && incoming().status == 'cancelled'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(appointmentId);
+    }
+
+    match /social_updates/{updateId} {
+      allow get, list: if true;
+      allow create: if isAdmin()
+        && isValidId(updateId)
+        && isValidSocialUpdate(incoming())
+        && incoming().authorUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(updateId)
+        && isValidSocialUpdate(incoming())
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isAdmin() && isValidId(updateId);
+    }
+
+    match /admins/{uid} {
+      allow get: if isVerifiedUser() && (request.auth.uid == uid || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+  }
+}

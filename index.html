@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Soumyajit Biswas — Systems, Applied AI & Athletics</title>
+    <meta
+      name="description"
+      content="Portfolio of Soumyajit Biswas — Co-Founder of Choreos Labs, M.Sc. Data Science at Universität Trier, computer vision builder, sports & trail addict. Book projects, download CV, and chat with his AI stand-in."
+    />
+    <meta property="og:title" content="Soumyajit Biswas — Systems, Applied AI & Athletics" />
+    <meta
+      property="og:description"
+      content="Co-Founder of Choreos Labs, M.Sc. Data Science at Universität Trier, applied AI & systems builder, and adventure traveler."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('sb-theme');
+          if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100 antialiased selection:bg-blue-600 selection:text-white transition-colors duration-200">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
