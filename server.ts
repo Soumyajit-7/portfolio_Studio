@@ -140,8 +140,8 @@ async function startServer() {
           ) {
             // Content-hashed Vite JS/CSS bundles can be cached indefinitely at Cloudflare & browser edge
             res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-          } else if (/\.(webp|jpg|jpeg|png|svg|woff2|pdf)$/i.test(filePath)) {
-            // Cache static images, fonts & CV for 30 days on Cloudflare CDN & browser
+          } else if (/\.(webp|jpg|jpeg|png|svg|ico|woff2|pdf)$/i.test(filePath)) {
+            // Cache static images, icons, fonts & CV for 30 days on Cloudflare CDN & browser
             res.setHeader('Cache-Control', 'public, max-age=2592000');
           }
         },
