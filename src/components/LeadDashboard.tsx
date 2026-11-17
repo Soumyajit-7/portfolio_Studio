@@ -13,21 +13,36 @@ import {
 import { type User } from 'firebase/auth';
 import {
   Calendar,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
   Inbox,
   LogOut,
   Mail,
+  MapPin,
   Plus,
   RefreshCw,
   Search,
   Send,
+  Video,
 } from 'lucide-react';
 import {
   db,
   getGmailAccessToken,
+  hasCalendarAccessToken,
   isAdminUser,
   logoutGoogle,
   signInWithGoogle,
 } from '../lib/firebase';
+import {
+  buildInPersonAcceptedTemplate,
+  buildInPersonCounterTemplate,
+  buildVirtualMeetAcceptedTemplate,
+  createCalendarAppointmentEvent,
+  sendMultipartGmail,
+  type AppointmentEmailContext,
+} from '../lib/appointmentTemplates';
+import { PROFILE_LINKS } from '../data/portfolioData';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface InquiryRecord {
@@ -50,11 +65,19 @@ interface AppointmentRecord {
   clientName: string;
   clientEmail: string;
   meetingType: string;
+  meetingMode?: 'google_meet' | 'in_person';
+  meetingPlace?: string;
   date: string;
   timeSlot: string;
   timezone: string;
   notes: string;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'pending' | 'counter_proposed' | 'confirmed' | 'completed' | 'cancelled';
+  meetLink?: string;
+  calendarEventId?: string;
+  counterDate?: string;
+  counterTimeSlot?: string;
+  counterPlace?: string;
+  counterNote?: string;
   createdAt?: { toDate?: () => Date; seconds?: number };
 }
 
@@ -122,6 +145,20 @@ export function LeadDashboard({
   const [replyBody, setReplyBody] = useState('');
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [sendingReply, setSendingReply] = useState(false);
+
+  // Admin appointment acceptance & counter-proposal modal states
+  const [acceptTarget, setAcceptTarget] = useState<AppointmentRecord | null>(null);
+  const [acceptDuration, setAcceptDuration] = useState<30 | 45 | 60>(30);
+  const [acceptHostNote, setAcceptHostNote] = useState('');
+  const [acceptAddCalendar, setAcceptAddCalendar] = useState(true);
+  const [acceptProcessing, setAcceptProcessing] = useState(false);
+
+  const [counterTarget, setCounterTarget] = useState<AppointmentRecord | null>(null);
+  const [counterDateDraft, setCounterDateDraft] = useState('');
+  const [counterTimeDraft, setCounterTimeDraft] = useState('');
+  const [counterPlaceDraft, setCounterPlaceDraft] = useState('');
+  const [counterNoteDraft, setCounterNoteDraft] = useState('');
+  const [counterProcessing, setCounterProcessing] = useState(false);
 
   const [socialPlatform, setSocialPlatform] = useState<'instagram' | 'linkedin'>('instagram');
   const [socialTitle, setSocialTitle] = useState('');
@@ -192,7 +229,7 @@ export function LeadDashboard({
     setAuthLoading(true);
     setDashboardError(null);
     try {
-      const res = await signInWithGoogle();
+      const res = await signInWithGoogle(true);
       onUserChanged(res.user);
     } catch (err: unknown) {
       setDashboardError(err instanceof Error ? err.message : 'Google Sign-In failed.');
@@ -268,20 +305,262 @@ export function LeadDashboard({
     }
   };
 
+  const normalizeAppointment = (appt: AppointmentRecord): AppointmentEmailContext => ({
+    id: appt.id,
+    clientName: appt.clientName,
+    clientEmail: appt.clientEmail,
+    meetingType: appt.meetingType,
+    meetingMode: appt.meetingMode === 'in_person' ? 'in_person' : 'google_meet',
+    meetingPlace:
+      appt.meetingPlace ||
+      (appt.meetingMode === 'in_person' ? 'Trier, Germany' : 'Google Meet (Virtual)'),
+    date: appt.counterDate || appt.date,
+    timeSlot: appt.counterTimeSlot || appt.timeSlot,
+    timezone: appt.timezone || 'Europe/Berlin (CET)',
+    notes: appt.notes || '',
+  });
+
+  const buildLegacyBackfillFields = (appt: AppointmentRecord) => ({
+    meetingMode: appt.meetingMode || 'google_meet',
+    meetingPlace:
+      appt.meetingPlace ||
+      (appt.meetingMode === 'in_person' ? 'Trier, Germany' : 'Google Meet (Virtual)'),
+    meetLink: appt.meetLink || '',
+    calendarEventId: appt.calendarEventId || '',
+    counterDate: appt.counterDate || '',
+    counterTimeSlot: appt.counterTimeSlot || '',
+    counterPlace: appt.counterPlace || '',
+    counterNote: appt.counterNote || '',
+  });
+
   const updateAppointmentStatus = async (
     appt: AppointmentRecord,
     nextStatus: AppointmentRecord['status']
   ) => {
     try {
-      await updateDoc(doc(db, 'appointments', appt.id), {
-        status: nextStatus,
-        updatedAt: serverTimestamp(),
-      });
+      if (isAdmin) {
+        await updateDoc(doc(db, 'appointments', appt.id), {
+          ...buildLegacyBackfillFields(appt),
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await updateDoc(doc(db, 'appointments', appt.id), {
+          status: nextStatus,
+          updatedAt: serverTimestamp(),
+        });
+      }
       setFeedbackMsg(`Appointment on ${appt.date} marked ${nextStatus}.`);
     } catch (error: unknown) {
       setDashboardError(
         error instanceof Error ? error.message : 'Failed to update appointment status.'
       );
+    }
+  };
+
+  const openAcceptModal = (appt: AppointmentRecord) => {
+    setAcceptTarget(appt);
+    setAcceptDuration(30);
+    setAcceptHostNote('');
+    setAcceptAddCalendar(true);
+    setDashboardError(null);
+  };
+
+  const openCounterModal = (appt: AppointmentRecord) => {
+    setCounterTarget(appt);
+    setCounterDateDraft(appt.counterDate || appt.date);
+    setCounterTimeDraft(appt.counterTimeSlot || appt.timeSlot);
+    setCounterPlaceDraft(appt.counterPlace || appt.meetingPlace || '');
+    setCounterNoteDraft(
+      appt.counterNote ||
+        'Based on my availability around that window, could we move our in-person meet to the date, time, and spot below?'
+    );
+    setDashboardError(null);
+  };
+
+  const executeAcceptAppointment = async () => {
+    if (!acceptTarget || !isAdmin || !user) return;
+    const token = getGmailAccessToken();
+    if (!token) {
+      setDashboardError('Please click Reconnect Google Workspace first so Calendar and Gmail can dispatch invites.');
+      return;
+    }
+
+    const ctx = normalizeAppointment(acceptTarget);
+    const isVirtual = ctx.meetingMode === 'google_meet';
+
+    if (isVirtual && !hasCalendarAccessToken()) {
+      setDashboardError('Please click Reconnect Google Workspace to grant Calendar access for creating the Google Meet link.');
+      return;
+    }
+
+    setAcceptProcessing(true);
+    setDashboardError(null);
+
+    try {
+      let generatedMeetLink = acceptTarget.meetLink || '';
+      let generatedEventId = acceptTarget.calendarEventId || '';
+
+      const finalDate = acceptTarget.counterDate || acceptTarget.date;
+      const finalTime = acceptTarget.counterTimeSlot || acceptTarget.timeSlot;
+      const finalPlace =
+        acceptTarget.counterPlace || acceptTarget.meetingPlace || 'Google Meet (Virtual)';
+
+      if (isVirtual || acceptAddCalendar) {
+        const calResult = await createCalendarAppointmentEvent({
+          accessToken: token,
+          appt: ctx,
+          ownerEmail: user.email || PROFILE_LINKS.email,
+          durationMinutes: acceptDuration,
+          hostNote: acceptHostNote,
+          overrideDate: finalDate,
+          overrideTimeSlot: finalTime,
+          overridePlace: finalPlace,
+        });
+        generatedEventId = calResult.eventId;
+        if (calResult.meetLink) {
+          generatedMeetLink = calResult.meetLink;
+        }
+      }
+
+      const ownerRecipients = Array.from(
+        new Set(
+          [user.email, PROFILE_LINKS.email]
+            .filter((e): e is string => Boolean(e))
+            .filter((e) => e.toLowerCase() !== ctx.clientEmail.toLowerCase())
+        )
+      );
+
+      if (isVirtual) {
+        const emailTpl = buildVirtualMeetAcceptedTemplate({
+          appt: { ...ctx, date: finalDate, timeSlot: finalTime },
+          meetLink: generatedMeetLink,
+          durationMinutes: acceptDuration,
+          hostNote: acceptHostNote,
+        });
+        await sendMultipartGmail({
+          accessToken: token,
+          to: [ctx.clientEmail],
+          cc: ownerRecipients,
+          subject: emailTpl.subject,
+          textBody: emailTpl.textBody,
+          htmlBody: emailTpl.htmlBody,
+        });
+      } else {
+        const emailTpl = buildInPersonAcceptedTemplate({
+          appt: ctx,
+          finalDate,
+          finalTimeSlot: finalTime,
+          finalPlace,
+          hostNote: acceptHostNote,
+        });
+        await sendMultipartGmail({
+          accessToken: token,
+          to: [ctx.clientEmail],
+          cc: ownerRecipients,
+          subject: emailTpl.subject,
+          textBody: emailTpl.textBody,
+          htmlBody: emailTpl.htmlBody,
+        });
+      }
+
+      await updateDoc(doc(db, 'appointments', acceptTarget.id), {
+        ...buildLegacyBackfillFields(acceptTarget),
+        status: 'confirmed',
+        meetLink: generatedMeetLink,
+        calendarEventId: generatedEventId,
+        updatedAt: serverTimestamp(),
+      });
+
+      setFeedbackMsg(
+        isVirtual
+          ? `Confirmed! Scheduled Google Meet link (${generatedMeetLink}) emailed to ${ctx.clientEmail} and you.`
+          : `In-person meeting confirmed and emailed to ${ctx.clientEmail} (and copied to you).`
+      );
+      setAcceptTarget(null);
+    } catch (error: unknown) {
+      setDashboardError(
+        error instanceof Error ? error.message : 'Failed to confirm appointment and send email.'
+      );
+    } finally {
+      setAcceptProcessing(false);
+    }
+  };
+
+  const executeCounterProposal = async () => {
+    if (!counterTarget || !isAdmin || !user) return;
+    const token = getGmailAccessToken();
+    if (!token) {
+      setDashboardError('Please click Reconnect Google Workspace before sending the counter-proposal email.');
+      return;
+    }
+
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(counterDateDraft.trim())) {
+      setDashboardError('Please pick a valid proposed date (YYYY-MM-DD).');
+      return;
+    }
+    if (counterTimeDraft.trim().length < 3 || counterPlaceDraft.trim().length < 2) {
+      setDashboardError('Please provide both a proposed time and place.');
+      return;
+    }
+
+    setCounterProcessing(true);
+    setDashboardError(null);
+
+    try {
+      const ctx = normalizeAppointment(counterTarget);
+      const cleanDate = counterDateDraft.trim();
+      const cleanTime = counterTimeDraft.trim().slice(0, 40);
+      const cleanPlace = counterPlaceDraft.trim().slice(0, 200);
+      const cleanNote = counterNoteDraft.trim().slice(0, 1000);
+
+      const tpl = buildInPersonCounterTemplate({
+        appt: ctx,
+        counter: {
+          newDate: cleanDate,
+          newTimeSlot: cleanTime,
+          newPlace: cleanPlace,
+          availabilityMessage: cleanNote,
+        },
+      });
+
+      const ownerRecipients = Array.from(
+        new Set(
+          [user.email, PROFILE_LINKS.email]
+            .filter((e): e is string => Boolean(e))
+            .filter((e) => e.toLowerCase() !== ctx.clientEmail.toLowerCase())
+        )
+      );
+
+      await sendMultipartGmail({
+        accessToken: token,
+        to: [ctx.clientEmail],
+        cc: ownerRecipients,
+        subject: tpl.subject,
+        textBody: tpl.textBody,
+        htmlBody: tpl.htmlBody,
+      });
+
+      await updateDoc(doc(db, 'appointments', counterTarget.id), {
+        ...buildLegacyBackfillFields(counterTarget),
+        status: 'counter_proposed',
+        counterDate: cleanDate,
+        counterTimeSlot: cleanTime,
+        counterPlace: cleanPlace,
+        counterNote: cleanNote,
+        updatedAt: serverTimestamp(),
+      });
+
+      setFeedbackMsg(
+        `Counter-proposal sent to ${ctx.clientEmail} for ${cleanDate} at ${cleanTime} (${cleanPlace}).`
+      );
+      setCounterTarget(null);
+    } catch (error: unknown) {
+      setDashboardError(
+        error instanceof Error ? error.message : 'Failed to send counter-proposal email.'
+      );
+    } finally {
+      setCounterProcessing(false);
     }
   };
 
@@ -598,6 +877,7 @@ export function LeadDashboard({
               ) : (
                 <>
                   <option value="pending">Pending</option>
+                  <option value="counter_proposed">Counter Proposed</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
@@ -788,68 +1068,120 @@ export function LeadDashboard({
                 <thead className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400">
                   <tr>
                     <th className="px-4 py-3 font-medium">Client</th>
-                    <th className="px-4 py-3 font-medium">Session Type</th>
+                    <th className="px-4 py-3 font-medium">Format & Venue / Meet</th>
                     <th className="px-4 py-3 font-medium">Schedule</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {filteredAppointments.map((appt) => (
-                    <tr key={appt.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                          {appt.clientName}
-                        </p>
-                        <p className="text-zinc-500 dark:text-zinc-400">{appt.clientEmail}</p>
-                      </td>
-                      <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">
-                        <p>{appt.meetingType}</p>
-                        {appt.notes && (
-                          <p className="text-zinc-500 dark:text-zinc-400 truncate max-w-xs">
-                            {appt.notes}
+                  {filteredAppointments.map((appt) => {
+                    const isInPerson = appt.meetingMode === 'in_person';
+                    return (
+                      <tr key={appt.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                        <td className="px-4 py-3 align-top">
+                          <p className="font-semibold text-zinc-900 dark:text-zinc-100">
+                            {appt.clientName}
                           </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-zinc-700 dark:text-zinc-300">
-                        {appt.date} · {appt.timeSlot}
-                      </td>
-                      <td className="px-4 py-3 font-mono capitalize text-zinc-700 dark:text-zinc-300">
-                        {appt.status}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex items-center gap-2">
-                          {isAdmin && appt.status === 'pending' && (
-                            <button
-                              type="button"
-                              onClick={() => void updateAppointmentStatus(appt, 'confirmed')}
-                              className="px-2.5 py-1 text-xs font-semibold rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-                            >
-                              Confirm
-                            </button>
+                          <p className="text-zinc-500 dark:text-zinc-400">{appt.clientEmail}</p>
+                        </td>
+                        <td className="px-4 py-3 align-top text-zinc-700 dark:text-zinc-300 space-y-1">
+                          <div className="flex items-center gap-1.5 font-medium text-zinc-900 dark:text-zinc-100">
+                            {isInPerson ? (
+                              <MapPin className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                            ) : (
+                              <Video className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                            )}
+                            <span>
+                              {appt.meetingType} · {isInPerson ? 'In-Person' : 'Google Meet'}
+                            </span>
+                          </div>
+                          {isInPerson && appt.meetingPlace && (
+                            <p className="text-zinc-600 dark:text-zinc-400">
+                              Place: {appt.counterPlace || appt.meetingPlace}
+                            </p>
                           )}
-                          {isAdmin && appt.status === 'confirmed' && (
-                            <button
-                              type="button"
-                              onClick={() => void updateAppointmentStatus(appt, 'completed')}
-                              className="px-2.5 py-1 text-xs font-semibold rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                          {appt.meetLink && (
+                            <a
+                              href={appt.meetLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-mono text-[11px] text-blue-600 dark:text-blue-400 hover:underline"
                             >
-                              Complete
-                            </button>
+                              Join Google Meet
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
                           )}
-                          {appt.status !== 'completed' && appt.status !== 'cancelled' && (
-                            <button
-                              type="button"
-                              onClick={() => void updateAppointmentStatus(appt, 'cancelled')}
-                              className="px-2.5 py-1 text-xs font-medium rounded border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
+                          {appt.notes && (
+                            <p className="text-zinc-500 dark:text-zinc-400 truncate max-w-xs">
+                              {appt.notes}
+                            </p>
                           )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                          {appt.counterNote && (
+                            <p className="text-amber-700 dark:text-amber-300 max-w-xs">
+                              Update note: {appt.counterNote}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top font-mono tabular-nums text-zinc-700 dark:text-zinc-300 space-y-1">
+                          <p>
+                            {appt.counterDate || appt.date} · {appt.counterTimeSlot || appt.timeSlot}
+                          </p>
+                          {appt.status === 'counter_proposed' && (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                              Orig: {appt.date} · {appt.timeSlot}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top font-mono capitalize text-zinc-700 dark:text-zinc-300">
+                          {appt.status.replace('_', ' ')}
+                        </td>
+                        <td className="px-4 py-3 align-top text-right">
+                          <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                            {isAdmin &&
+                              (appt.status === 'pending' || appt.status === 'counter_proposed') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openAcceptModal(appt)}
+                                    className="px-2.5 py-1 text-xs font-semibold rounded bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+                                  >
+                                    {isInPerson ? 'Accept' : 'Accept & Send Meet'}
+                                  </button>
+                                  {isInPerson && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openCounterModal(appt)}
+                                      className="px-2.5 py-1 text-xs font-semibold rounded border border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 cursor-pointer"
+                                    >
+                                      Counter Date / Place
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            {isAdmin && appt.status === 'confirmed' && (
+                              <button
+                                type="button"
+                                onClick={() => void updateAppointmentStatus(appt, 'completed')}
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer"
+                              >
+                                Complete
+                              </button>
+                            )}
+                            {appt.status !== 'completed' && appt.status !== 'cancelled' && (
+                              <button
+                                type="button"
+                                onClick={() => void updateAppointmentStatus(appt, 'cancelled')}
+                                className="px-2.5 py-1 text-xs font-medium rounded border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1064,6 +1396,270 @@ export function LeadDashboard({
                 className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
               >
                 {sendingReply ? 'Sending...' : 'Confirm & Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-Only Accept Appointment Modal (Google Meet or In-Person Confirmation) */}
+      {acceptTarget && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="max-w-lg w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div>
+              <p className="text-xs font-mono text-blue-600 dark:text-blue-400 mb-1">
+                {acceptTarget.meetingMode === 'in_person'
+                  ? 'Accept In-Person Appointment'
+                  : 'Accept & Schedule Google Meet'}
+              </p>
+              <h3 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                Confirm with {acceptTarget.clientName}
+              </h3>
+            </div>
+
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4 text-xs space-y-1.5">
+              <p>
+                <span className="text-zinc-500 dark:text-zinc-400">Requester:</span>{' '}
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                  {acceptTarget.clientEmail}
+                </span>
+              </p>
+              <p>
+                <span className="text-zinc-500 dark:text-zinc-400">Session:</span>{' '}
+                {acceptTarget.meetingType}
+              </p>
+              <p className="font-mono tabular-nums">
+                <span className="text-zinc-500 dark:text-zinc-400 font-sans">When:</span>{' '}
+                {acceptTarget.counterDate || acceptTarget.date} ·{' '}
+                {acceptTarget.counterTimeSlot || acceptTarget.timeSlot} ({acceptTarget.timezone})
+              </p>
+              {acceptTarget.meetingMode === 'in_person' ? (
+                <p>
+                  <span className="text-zinc-500 dark:text-zinc-400">Place:</span>{' '}
+                  {acceptTarget.counterPlace || acceptTarget.meetingPlace}
+                </p>
+              ) : (
+                <p className="text-blue-600 dark:text-blue-400 font-medium">
+                  Generates a live Google Meet link on Google Calendar and emails it to both{' '}
+                  {acceptTarget.clientEmail} and you.
+                </p>
+              )}
+            </div>
+
+            {(!getGmailAccessToken() ||
+              (acceptTarget.meetingMode !== 'in_person' && !hasCalendarAccessToken())) && (
+              <div className="rounded-lg border border-amber-300 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 p-3.5 text-xs text-amber-800 dark:text-amber-200 flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  Reconnect your Google account to refresh Calendar & Gmail dispatch permissions.
+                </span>
+                <GoogleSignInButton
+                  onClick={handleLogin}
+                  loading={authLoading}
+                  label="Reconnect Workspace"
+                />
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                  Session Duration
+                </label>
+                <div className="flex gap-2">
+                  {([30, 45, 60] as const).map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => setAcceptDuration(mins)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-lg border cursor-pointer ${
+                        acceptDuration === mins
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      <Clock className="w-3 h-3" />
+                      {mins} min
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {acceptTarget.meetingMode === 'in_person' && (
+                <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={acceptAddCalendar}
+                    onChange={(e) => setAcceptAddCalendar(e.target.checked)}
+                    className="rounded border-zinc-300 dark:border-zinc-700 text-blue-600"
+                  />
+                  <span>Also create a Google Calendar invite with location</span>
+                </label>
+              )}
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                  Optional Note to Include in Email
+                </label>
+                <textarea
+                  rows={3}
+                  maxLength={500}
+                  value={acceptHostNote}
+                  onChange={(e) => setAcceptHostNote(e.target.value)}
+                  placeholder="Looking forward to connecting! Feel free to share any links beforehand..."
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs text-zinc-900 dark:text-zinc-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setAcceptTarget(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={acceptProcessing}
+                onClick={() => void executeAcceptAppointment()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {acceptProcessing
+                  ? 'Scheduling & Emailing...'
+                  : acceptTarget.meetingMode === 'in_person'
+                    ? 'Confirm & Send Email'
+                    : 'Confirm & Send Meet Link'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin-Only In-Person Counter-Proposal Modal */}
+      {counterTarget && isAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="max-w-xl w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            <div>
+              <p className="text-xs font-mono text-blue-600 dark:text-blue-400 mb-1">
+                In-Person Availability Counter-Proposal
+              </p>
+              <h3 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                Suggest New Date, Time or Place to {counterTarget.clientName}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                Original request: {counterTarget.date} · {counterTarget.timeSlot} ·{' '}
+                {counterTarget.meetingPlace}
+              </p>
+            </div>
+
+            {!getGmailAccessToken() && (
+              <div className="rounded-lg border border-amber-300 dark:border-amber-900/70 bg-amber-50 dark:bg-amber-950/30 p-3.5 text-xs text-amber-800 dark:text-amber-200 flex flex-wrap items-center justify-between gap-3">
+                <span>Reconnect Google Workspace to send this counter-proposal via Gmail.</span>
+                <GoogleSignInButton
+                  onClick={handleLogin}
+                  loading={authLoading}
+                  label="Reconnect Gmail"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  Proposed Date
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={counterDateDraft}
+                  onChange={(e) => setCounterDateDraft(e.target.value)}
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-mono tabular-nums"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                  Proposed Time
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={40}
+                  value={counterTimeDraft}
+                  onChange={(e) => setCounterTimeDraft(e.target.value)}
+                  placeholder="e.g., 15:30 CET"
+                  className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Proposed Place / Venue
+              </label>
+              <input
+                type="text"
+                required
+                maxLength={200}
+                value={counterPlaceDraft}
+                onChange={(e) => setCounterPlaceDraft(e.target.value)}
+                placeholder="e.g., Café am Dom, Trier or Universität Trier Campus"
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                Personal Availability Note
+              </label>
+              <textarea
+                rows={3}
+                maxLength={1000}
+                value={counterNoteDraft}
+                onChange={(e) => setCounterNoteDraft(e.target.value)}
+                className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-xs"
+              />
+            </div>
+
+            {/* Formatted Email Preview */}
+            <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-4 text-xs space-y-2">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                Email Preview · To: {counterTarget.clientEmail}
+              </p>
+              <p className="text-zinc-800 dark:text-zinc-200">
+                Hi {counterTarget.clientName},
+                <br />
+                <span className="text-zinc-600 dark:text-zinc-400">{counterNoteDraft}</span>
+              </p>
+              <div className="rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 p-3 font-mono text-[11px] space-y-1">
+                <p>New Date: {counterDateDraft}</p>
+                <p>New Time: {counterTimeDraft}</p>
+                <p>New Place: {counterPlaceDraft}</p>
+              </div>
+              <p className="text-zinc-700 dark:text-zinc-300 pt-1 border-t border-zinc-200 dark:border-zinc-800">
+                Best regards,
+                <br />
+                <strong>Soumyajit Biswas</strong>
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setCounterTarget(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={counterProcessing}
+                onClick={() => void executeCounterProposal()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {counterProcessing ? 'Sending Email...' : 'Confirm & Send Counter-Proposal'}
               </button>
             </div>
           </div>

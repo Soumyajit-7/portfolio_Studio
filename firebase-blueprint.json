@@ -80,7 +80,7 @@
     },
     "Appointment": {
       "title": "Appointment",
-      "description": "Scheduled consultation or freelance discovery call booking.",
+      "description": "Scheduled consultation, Google Meet, or in-person appointment booking.",
       "type": "object",
       "properties": {
         "ownerUid": {
@@ -110,6 +110,16 @@
           ],
           "maxLength": 60
         },
+        "meetingMode": {
+          "type": "string",
+          "enum": ["google_meet", "in_person"],
+          "maxLength": 20
+        },
+        "meetingPlace": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
         "date": {
           "type": "string",
           "minLength": 10,
@@ -133,8 +143,38 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pending", "confirmed", "completed", "cancelled"],
+          "enum": ["pending", "counter_proposed", "confirmed", "completed", "cancelled"],
           "maxLength": 20
+        },
+        "meetLink": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "calendarEventId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "counterDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 10
+        },
+        "counterTimeSlot": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40
+        },
+        "counterPlace": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 200
+        },
+        "counterNote": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000
         },
         "createdAt": {
           "type": "string",
@@ -150,11 +190,19 @@
         "clientName",
         "clientEmail",
         "meetingType",
+        "meetingMode",
+        "meetingPlace",
         "date",
         "timeSlot",
         "timezone",
         "notes",
         "status",
+        "meetLink",
+        "calendarEventId",
+        "counterDate",
+        "counterTimeSlot",
+        "counterPlace",
+        "counterNote",
         "createdAt",
         "updatedAt"
       ]

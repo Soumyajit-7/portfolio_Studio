@@ -109,4 +109,18 @@ export const DIRTY_DOZEN_CASES = [
     auth: { uid: 'user_1', email: 'u@test.com', email_verified: true },
     expected: 'PERMISSION_DENIED',
   },
+  {
+    id: 13,
+    name: 'Non-Admin Spoofing Meet Link or Counter-Proposal Fields on Appointment',
+    collection: 'appointments',
+    operation: 'create',
+    auth: { uid: 'user_1', email: 'u@test.com', email_verified: true },
+    payload: {
+      ownerUid: 'user_1',
+      status: 'pending',
+      meetLink: 'https://meet.google.com/spoofed',
+      counterPlace: 'Admin only place',
+    },
+    expected: 'PERMISSION_DENIED',
+  },
 ];

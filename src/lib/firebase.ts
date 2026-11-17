@@ -23,18 +23,33 @@ const databaseId =
 export const db = getFirestore(app, databaseId);
 export const auth = getAuth(app);
 
-const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/gmail.send');
-googleProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+export const WORKSPACE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
+] as const;
 
-let cachedGmailAccessToken: string | null = null;
+const visitorProvider = new GoogleAuthProvider();
+visitorProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+visitorProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+
+const workspaceProvider = new GoogleAuthProvider();
+WORKSPACE_SCOPES.forEach((scope) => workspaceProvider.addScope(scope));
+
+let cachedWorkspaceAccessToken: string | null = null;
+let cachedTokenHasCalendar = false;
 
 export function getGmailAccessToken(): string | null {
-  return cachedGmailAccessToken;
+  return cachedWorkspaceAccessToken;
+}
+
+export function hasCalendarAccessToken(): boolean {
+  return Boolean(cachedWorkspaceAccessToken && cachedTokenHasCalendar);
 }
 
 export function clearGmailAccessToken(): void {
-  cachedGmailAccessToken = null;
+  cachedWorkspaceAccessToken = null;
+  cachedTokenHasCalendar = false;
 }
 
 export function isAdminUser(user: User | null): boolean {
@@ -42,30 +57,33 @@ export function isAdminUser(user: User | null): boolean {
   return user.emailVerified && ADMIN_EMAILS.has(user.email.toLowerCase());
 }
 
-export async function signInWithGoogle(): Promise<{
+export async function signInWithGoogle(includeCalendarScope = false): Promise<{
   user: User;
   accessToken: string | null;
 }> {
-  const result = await signInWithPopup(auth, googleProvider);
+  const provider = includeCalendarScope ? workspaceProvider : visitorProvider;
+  const result = await signInWithPopup(auth, provider);
   const credential = GoogleAuthProvider.credentialFromResult(result);
   if (credential?.accessToken) {
-    cachedGmailAccessToken = credential.accessToken;
+    cachedWorkspaceAccessToken = credential.accessToken;
+    cachedTokenHasCalendar = includeCalendarScope;
   }
   return {
     user: result.user,
-    accessToken: cachedGmailAccessToken,
+    accessToken: cachedWorkspaceAccessToken,
   };
 }
 
 export async function logoutGoogle(): Promise<void> {
-  cachedGmailAccessToken = null;
+  cachedWorkspaceAccessToken = null;
+  cachedTokenHasCalendar = false;
   await signOut(auth);
 }
 
 export function subscribeAuth(callback: (user: User | null) => void): () => void {
   return onAuthStateChanged(auth, (user) => {
     if (!user) {
-      cachedGmailAccessToken = null;
+      clearGmailAccessToken();
     }
     callback(user);
   });

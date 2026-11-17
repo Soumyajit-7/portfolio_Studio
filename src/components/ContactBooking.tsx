@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { type User } from 'firebase/auth';
-import { Calendar, CheckCircle2, Mail, Send } from 'lucide-react';
+import { Calendar, CheckCircle2, Mail, MapPin, Send, Video } from 'lucide-react';
 import {
   db,
   getGmailAccessToken,
@@ -67,6 +67,8 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
   const [clientEmail, setClientEmail] = useState(user?.email || '');
   const [meetingType, setMeetingType] =
     useState<(typeof MEETING_TYPES)[number]>('Freelance Discovery');
+  const [meetingMode, setMeetingMode] = useState<'google_meet' | 'in_person'>('google_meet');
+  const [meetingPlace, setMeetingPlace] = useState('');
   const [date, setDate] = useState(() => {
     const d = new Date(Date.now() + 2 * 86400000);
     return d.toISOString().split('T')[0];
@@ -244,6 +246,14 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
       return;
     }
 
+    const cleanPlace =
+      meetingMode === 'in_person' ? meetingPlace.trim().slice(0, 200) : 'Google Meet (Virtual)';
+
+    if (meetingMode === 'in_person' && cleanPlace.length < 2) {
+      setErrorMsg('Please enter a preferred place or city for an in-person meeting.');
+      return;
+    }
+
     setSubmitting(true);
     const docId = generateDocId('appt');
 
@@ -253,18 +263,31 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
         clientName: (clientName || user.displayName || 'Visitor').trim().slice(0, 100),
         clientEmail: emailToCheck.slice(0, 150),
         meetingType,
+        meetingMode,
+        meetingPlace: cleanPlace,
         date,
         timeSlot,
         timezone: timezone.trim().slice(0, 60) || 'Europe/Berlin (CET)',
         notes: notes.trim().slice(0, 1000),
         status: 'pending',
+        meetLink: '',
+        calendarEventId: '',
+        counterDate: '',
+        counterTimeSlot: '',
+        counterPlace: '',
+        counterNote: '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
       setNotes('');
+      if (meetingMode === 'in_person') {
+        setMeetingPlace('');
+      }
       setSuccessMsg(
-        `Slot requested for ${date} at ${timeSlot}. Check the Lead Dashboard anytime for confirmation.`
+        meetingMode === 'google_meet'
+          ? `Google Meet request saved for ${date} at ${timeSlot}. Once accepted, both of us will receive the scheduled Meet link via email.`
+          : `In-person request saved for ${date} at ${timeSlot} (${cleanPlace}). I will confirm or send a date, time, or place update to your email.`
       );
     } catch (error: unknown) {
       setErrorMsg(
@@ -520,6 +543,75 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Meeting Format
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMeetingMode('google_meet')}
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                      meetingMode === 'google_meet'
+                        ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/30 text-zinc-900 dark:text-zinc-100'
+                        : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <Video
+                      className={`w-4 h-4 mt-0.5 shrink-0 ${
+                        meetingMode === 'google_meet' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'
+                      }`}
+                    />
+                    <div>
+                      <p className="text-xs font-semibold">Google Meet (Virtual)</p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        Scheduled Meet link emailed to both of us upon approval.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMeetingMode('in_person')}
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
+                      meetingMode === 'in_person'
+                        ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/30 text-zinc-900 dark:text-zinc-100'
+                        : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
+                    }`}
+                  >
+                    <MapPin
+                      className={`w-4 h-4 mt-0.5 shrink-0 ${
+                        meetingMode === 'in_person' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'
+                      }`}
+                    />
+                    <div>
+                      <p className="text-xs font-semibold">In-Person Meet</p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        Suggest a venue; confirmed or countered via email.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {meetingMode === 'in_person' && (
+                <div>
+                  <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    Proposed Place / Venue
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    minLength={2}
+                    maxLength={200}
+                    value={meetingPlace}
+                    onChange={(e) => setMeetingPlace(e.target.value)}
+                    placeholder="e.g., Universität Trier Campus, Hauptmarkt Café, or your office address"
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
