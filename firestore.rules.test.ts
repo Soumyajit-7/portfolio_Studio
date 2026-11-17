@@ -6,9 +6,9 @@
 export const DIRTY_DOZEN_CASES = [
   {
     id: 1,
-    name: 'Unauthenticated Inquiry Create',
+    name: 'Unauthenticated Guest Inquiry Read or Malformed Create',
     collection: 'inquiries',
-    operation: 'create',
+    operation: 'list',
     auth: null,
     expected: 'PERMISSION_DENIED',
   },

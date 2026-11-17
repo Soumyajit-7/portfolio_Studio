@@ -2,17 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { type User } from 'firebase/auth';
 import { Calendar, CheckCircle2, Mail, MapPin, Send, Video } from 'lucide-react';
-import {
-  db,
-  getGmailAccessToken,
-  signInWithGoogle,
-} from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { PROFILE_LINKS } from '../data/portfolioData';
-import { GoogleSignInButton } from './GoogleSignInButton';
 
 interface ContactBookingProps {
-  user: User | null;
-  onUserSignedIn: (user: User) => void;
+  user?: User | null;
 }
 
 const TOPICS = [
@@ -33,35 +27,14 @@ const TIME_SLOTS = ['09:30 CET', '11:30 CET', '14:00 CET', '16:30 CET', '18:30 C
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function encodeGmailMessage(to: string, fromName: string, subject: string, body: string): string {
-  const rawEmail = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    '',
-    `From visitor: ${fromName}`,
-    '',
-    body,
-  ].join('\r\n');
-
-  const bytes = new TextEncoder().encode(rawEmail);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
+export function ContactBooking({ user = null }: ContactBookingProps) {
   const [activeTab, setActiveTab] = useState<'inquiry' | 'appointment'>('inquiry');
-  const [authLoading, setAuthLoading] = useState(false);
 
   const [senderName, setSenderName] = useState(user?.displayName || '');
   const [senderEmail, setSenderEmail] = useState(user?.email || '');
   const [company, setCompany] = useState('');
   const [topic, setTopic] = useState<(typeof TOPICS)[number]>('Freelance Project');
   const [message, setMessage] = useState('');
-  const [alsoSendGmail, setAlsoSendGmail] = useState(false);
 
   const [clientName, setClientName] = useState(user?.displayName || '');
   const [clientEmail, setClientEmail] = useState(user?.email || '');
@@ -81,12 +54,6 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const [pendingGmailConfirm, setPendingGmailConfirm] = useState<{
-    subject: string;
-    body: string;
-    onConfirm: () => Promise<void>;
-  } | null>(null);
-
   useEffect(() => {
     if (user) {
       setSenderName((prev) => prev || user.displayName || '');
@@ -96,67 +63,39 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
     }
   }, [user]);
 
-  const handleGoogleAuth = async () => {
-    setAuthLoading(true);
-    setErrorMsg(null);
-    try {
-      const res = await signInWithGoogle();
-      onUserSignedIn(res.user);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Google Sign-In was cancelled or failed.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   const generateDocId = (prefix: string) =>
     `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  const persistInquiry = async (sendEmailNow: boolean) => {
-    if (!user) return;
-    setSubmitting(true);
+  const handleInquirySubmit = async (e: FormEvent) => {
+    e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
+    const cleanName = senderName.trim().slice(0, 100);
+    const cleanEmail = senderEmail.trim().slice(0, 150);
+
+    if (cleanName.length < 1) {
+      setErrorMsg('Please enter your name.');
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setErrorMsg('Please provide a valid email address so I can reply.');
+      return;
+    }
+
+    if (message.trim().length < 5) {
+      setErrorMsg('Give me at least 5 characters so I know what we are talking about.');
+      return;
+    }
+
+    setSubmitting(true);
     const docId = generateDocId('inq');
-    const cleanName = (senderName || user.displayName || 'Visitor').trim().slice(0, 100);
-    const cleanEmail = (senderEmail || user.email || '').trim().slice(0, 150);
+    const ownerUid = user?.emailVerified ? user.uid : 'public_guest';
 
     try {
-      let sentViaGmail = false;
-      if (sendEmailNow) {
-        const token = getGmailAccessToken();
-        if (!token) {
-          throw new Error(
-            'Your Gmail session expired. Hit Sign in with Google again so Gmail can send your note.'
-          );
-        }
-        const raw = encodeGmailMessage(
-          PROFILE_LINKS.email,
-          `${cleanName} (${cleanEmail})`,
-          `[Portfolio Inquiry] ${topic} — ${cleanName}`,
-          `Company/Org: ${company.trim() || 'Independent'}\nTopic: ${topic}\nReply Email: ${cleanEmail}\n\n${message.trim()}`
-        );
-        const gmailRes = await fetch(
-          'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ raw }),
-          }
-        );
-        if (!gmailRes.ok) {
-          const errBody = await gmailRes.json().catch(() => ({}));
-          throw new Error(errBody.error?.message || 'Gmail refused to send the message.');
-        }
-        sentViaGmail = true;
-      }
-
       await setDoc(doc(db, 'inquiries', docId), {
-        ownerUid: user.uid,
+        ownerUid,
         senderName: cleanName,
         senderEmail: cleanEmail,
         company: company.trim().slice(0, 120),
@@ -164,7 +103,7 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
         message: message.trim().slice(0, 2000),
         status: 'new',
         adminNotes: '',
-        sentViaGmail,
+        sentViaGmail: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -172,9 +111,7 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
       setMessage('');
       setCompany('');
       setSuccessMsg(
-        sentViaGmail
-          ? 'Sent via Gmail and saved in the lead tracker. Talk soon!'
-          : 'Saved straight to the lead database. I will get back to you shortly!'
+        `Got it! Your inquiry landed straight in my inbox tracker—I will reply to ${cleanEmail} shortly.`
       );
     } catch (error: unknown) {
       setErrorMsg(
@@ -185,59 +122,21 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
     }
   };
 
-  const handleInquirySubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
-    if (!user) {
-      setErrorMsg('Please sign in with Google first so I know you are an actual human (and so you can track replies).');
-      return;
-    }
-
-    const emailToCheck = (senderEmail || user.email || '').trim();
-    if (!EMAIL_REGEX.test(emailToCheck)) {
-      setErrorMsg('Please provide a valid email address.');
-      return;
-    }
-
-    if (message.trim().length < 5) {
-      setErrorMsg('Give me at least 5 characters so I know what we are talking about.');
-      return;
-    }
-
-    if (alsoSendGmail) {
-      if (!getGmailAccessToken()) {
-        setErrorMsg('Please click Sign in with Google again to authorize Gmail sending.');
-        return;
-      }
-      setPendingGmailConfirm({
-        subject: `[Portfolio Inquiry] ${topic} — ${(senderName || user.displayName || 'Visitor').trim()}`,
-        body: message.trim(),
-        onConfirm: async () => {
-          setPendingGmailConfirm(null);
-          await persistInquiry(true);
-        },
-      });
-      return;
-    }
-
-    await persistInquiry(false);
-  };
-
   const handleAppointmentSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    if (!user) {
-      setErrorMsg('Please sign in with Google first to lock in and track your booking.');
+    const cleanName = clientName.trim().slice(0, 100);
+    const cleanEmail = clientEmail.trim().slice(0, 150);
+
+    if (cleanName.length < 1) {
+      setErrorMsg('Please enter your name.');
       return;
     }
 
-    const emailToCheck = (clientEmail || user.email || '').trim();
-    if (!EMAIL_REGEX.test(emailToCheck)) {
-      setErrorMsg('Please provide a valid email address.');
+    if (!EMAIL_REGEX.test(cleanEmail)) {
+      setErrorMsg('Please provide a valid email address to receive your invite or counter-proposal.');
       return;
     }
 
@@ -256,12 +155,13 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
 
     setSubmitting(true);
     const docId = generateDocId('appt');
+    const ownerUid = user?.emailVerified ? user.uid : 'public_guest';
 
     try {
       await setDoc(doc(db, 'appointments', docId), {
-        ownerUid: user.uid,
-        clientName: (clientName || user.displayName || 'Visitor').trim().slice(0, 100),
-        clientEmail: emailToCheck.slice(0, 150),
+        ownerUid,
+        clientName: cleanName,
+        clientEmail: cleanEmail,
         meetingType,
         meetingMode,
         meetingPlace: cleanPlace,
@@ -286,8 +186,8 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
       }
       setSuccessMsg(
         meetingMode === 'google_meet'
-          ? `Google Meet request saved for ${date} at ${timeSlot}. Once accepted, both of us will receive the scheduled Meet link via email.`
-          : `In-person request saved for ${date} at ${timeSlot} (${cleanPlace}). I will confirm or send a date, time, or place update to your email.`
+          ? `Google Meet request saved for ${date} at ${timeSlot}. Once I accept, both of us will receive the scheduled Meet link at ${cleanEmail}.`
+          : `In-person request saved for ${date} at ${timeSlot} (${cleanPlace}). I will confirm or send a date, time, or place update to ${cleanEmail}.`
       );
     } catch (error: unknown) {
       setErrorMsg(
@@ -316,9 +216,8 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
               Got an ambitious build, freelance gig, or working-student role?
             </h2>
             <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              Drop a message below (and optionally fire it straight through your Gmail) or grab a
-              time slot in Central European Time. Everything lands straight in my lead dashboard so
-              nothing gets buried.
+              Drop a quick note or book a Google Meet / in-person slot right here—no account
+              required. Everything lands directly in my lead dashboard so nothing gets buried.
             </p>
           </div>
 
@@ -389,13 +288,9 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
               </button>
             </div>
 
-            {!user ? (
-              <GoogleSignInButton onClick={handleGoogleAuth} loading={authLoading} />
-            ) : (
-              <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[220px]">
-                Signed in: {user.email}
-              </p>
-            )}
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
+              No sign-in required · Replies go to your email
+            </p>
           </div>
 
           {errorMsg && (
@@ -492,16 +387,6 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
                 />
               </div>
 
-              <label className="flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={alsoSendGmail}
-                  onChange={(e) => setAlsoSendGmail(e.target.checked)}
-                  className="rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-600"
-                />
-                <span>Also send an email copy directly via my connected Gmail account</span>
-              </label>
-
               <button
                 type="submit"
                 disabled={submitting}
@@ -560,7 +445,9 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
                   >
                     <Video
                       className={`w-4 h-4 mt-0.5 shrink-0 ${
-                        meetingMode === 'google_meet' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'
+                        meetingMode === 'google_meet'
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-zinc-400'
                       }`}
                     />
                     <div>
@@ -582,7 +469,9 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
                   >
                     <MapPin
                       className={`w-4 h-4 mt-0.5 shrink-0 ${
-                        meetingMode === 'in_person' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'
+                        meetingMode === 'in_person'
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-zinc-400'
                       }`}
                     />
                     <div>
@@ -708,48 +597,6 @@ export function ContactBooking({ user, onUserSignedIn }: ContactBookingProps) {
           )}
         </div>
       </div>
-
-      {/* Mandatory Confirmation Dialog for Sending Email via Gmail */}
-      {pendingGmailConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="max-w-md w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 space-y-4">
-            <h3 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100">
-              Confirm Sending Email via Gmail
-            </h3>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              This will send an email from your Google account directly to{' '}
-              <span className="font-mono text-zinc-900 dark:text-zinc-100">
-                {PROFILE_LINKS.email}
-              </span>
-              .
-            </p>
-            <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3.5 text-xs space-y-1">
-              <p className="font-semibold text-zinc-900 dark:text-zinc-100">
-                Subject: {pendingGmailConfirm.subject}
-              </p>
-              <p className="text-zinc-600 dark:text-zinc-400 line-clamp-4">
-                {pendingGmailConfirm.body}
-              </p>
-            </div>
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setPendingGmailConfirm(null)}
-                className="px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void pendingGmailConfirm.onConfirm()}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
-              >
-                Confirm & Send Email
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

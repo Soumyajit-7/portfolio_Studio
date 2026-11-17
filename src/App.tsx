@@ -119,7 +119,7 @@ function PortfolioContent() {
             <WorkSection />
             <ExperienceTimeline />
             <ActivityPulse socialUpdates={socialUpdates} />
-            <ContactBooking user={user} onUserSignedIn={(u) => setUser(u)} />
+            <ContactBooking user={user} />
           </>
         ) : (
           <LeadDashboard

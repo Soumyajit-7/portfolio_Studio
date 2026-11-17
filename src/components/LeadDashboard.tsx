@@ -8,7 +8,6 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from 'firebase/firestore';
 import { type User } from 'firebase/auth';
 import {
@@ -170,9 +169,10 @@ export function LeadDashboard({
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !isAdmin) {
       setInquiries([]);
       setAppointments([]);
+      setLoadingData(false);
       setDashboardError(null);
       return;
     }
@@ -180,10 +180,7 @@ export function LeadDashboard({
     setLoadingData(true);
     setDashboardError(null);
 
-    // Avoid composite index failures for visitor queries by sorting client-side
-    const inquiriesQuery = isAdmin
-      ? query(collection(db, 'inquiries'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'inquiries'), where('ownerUid', '==', user.uid));
+    const inquiriesQuery = query(collection(db, 'inquiries'), orderBy('createdAt', 'desc'));
 
     const unsubInquiries = onSnapshot(
       inquiriesQuery,
@@ -201,9 +198,7 @@ export function LeadDashboard({
       }
     );
 
-    const appointmentsQuery = isAdmin
-      ? query(collection(db, 'appointments'), orderBy('createdAt', 'desc'))
-      : query(collection(db, 'appointments'), where('ownerUid', '==', user.uid));
+    const appointmentsQuery = query(collection(db, 'appointments'), orderBy('createdAt', 'desc'));
 
     const unsubAppointments = onSnapshot(
       appointmentsQuery,
@@ -685,14 +680,14 @@ export function LeadDashboard({
       <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 sm:p-12 text-center space-y-5">
           <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-            Lead & Inquiry Portal
+            Owner Portal · Private CRM
           </p>
           <h1 className="font-display text-3xl font-bold text-zinc-900 dark:text-zinc-100">
-            Sign in to manage leads, bookings & Gmail
+            Sign in to manage leads, appointments & Gmail
           </h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mx-auto">
-            Sign in with Google to triage incoming leads, confirm calls, reply via Gmail, or track
-            the status of your own submitted requests.
+            This portal is restricted to Soumyajit Biswas. Visitors can submit inquiries and book
+            slots directly on the portfolio without signing in.
           </p>
           <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
             <GoogleSignInButton onClick={handleLogin} loading={authLoading} />
@@ -700,6 +695,42 @@ export function LeadDashboard({
               type="button"
               onClick={onBackToPortfolio}
               className="px-4 py-2.5 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+            >
+              Return to Portfolio
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <section className="py-20 px-4 sm:px-6 lg:px-8 max-w-3xl mx-auto">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 sm:p-12 text-center space-y-5">
+          <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
+            Signed in as {user.email}
+          </p>
+          <h1 className="font-display text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+            Owner access required
+          </h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mx-auto">
+            Lead management, appointment approvals, and Gmail controls are only enabled for
+            Soumyajit’s verified owner accounts.
+          </p>
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </button>
+            <button
+              type="button"
+              onClick={onBackToPortfolio}
+              className="px-4 py-2.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
             >
               Return to Portfolio
             </button>

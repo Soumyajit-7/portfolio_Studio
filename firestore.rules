@@ -109,40 +109,31 @@ service cloud.firestore {
     }
 
     match /inquiries/{inquiryId} {
-      allow get: if isAdmin() || (isVerifiedUser() && existing().ownerUid == request.auth.uid);
-      allow list: if isAdmin() || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
-      allow create: if isVerifiedUser()
-        && isValidId(inquiryId)
+      allow get, list: if isAdmin();
+      allow create: if isValidId(inquiryId)
         && isValidInquiry(incoming())
-        && incoming().ownerUid == request.auth.uid
+        && (isVerifiedUser() ? incoming().ownerUid == request.auth.uid : incoming().ownerUid == 'public_guest')
+        && incoming().senderEmail.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
         && incoming().status == 'new'
         && incoming().adminNotes == ''
+        && incoming().sentViaGmail == false
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser()
+      allow update: if isAdmin()
         && isValidId(inquiryId)
         && isValidInquiry(incoming())
         && incoming().ownerUid == existing().ownerUid
         && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time
-        && (
-          isAdmin() ||
-          (
-            existing().ownerUid == request.auth.uid
-            && existing().status == 'new'
-            && incoming().diff(existing()).affectedKeys().hasOnly(['message', 'topic', 'company', 'updatedAt'])
-          )
-        );
+        && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(inquiryId);
     }
 
     match /appointments/{appointmentId} {
-      allow get: if isAdmin() || (isVerifiedUser() && existing().ownerUid == request.auth.uid);
-      allow list: if isAdmin() || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
-      allow create: if isVerifiedUser()
-        && isValidId(appointmentId)
+      allow get, list: if isAdmin();
+      allow create: if isValidId(appointmentId)
         && isValidAppointment(incoming())
-        && incoming().ownerUid == request.auth.uid
+        && (isVerifiedUser() ? incoming().ownerUid == request.auth.uid : incoming().ownerUid == 'public_guest')
+        && incoming().clientEmail.matches('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$')
         && incoming().status == 'pending'
         && (incoming().meetingMode == 'google_meet' || incoming().meetingPlace.size() >= 2)
         && incoming().meetLink == ''
@@ -153,22 +144,12 @@ service cloud.firestore {
         && incoming().counterNote == ''
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isVerifiedUser()
+      allow update: if isAdmin()
         && isValidId(appointmentId)
         && isValidAppointment(incoming())
         && incoming().ownerUid == existing().ownerUid
         && incoming().createdAt == existing().createdAt
-        && incoming().updatedAt == request.time
-        && (
-          isAdmin() ||
-          (
-            existing().ownerUid == request.auth.uid
-            && existing().status != 'completed'
-            && existing().status != 'cancelled'
-            && incoming().status == 'cancelled'
-            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
-          )
-        );
+        && incoming().updatedAt == request.time;
       allow delete: if isAdmin() && isValidId(appointmentId);
     }
 

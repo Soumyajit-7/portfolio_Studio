@@ -1,12 +1,12 @@
 # Security Specification & Hardened Firestore Rules TDD
 
 ## 1. Data Invariants
-1. **Identity Integrity**: Every `Inquiry` and `Appointment` document must have `ownerUid == request.auth.uid` on creation, and `ownerUid` is immutable after creation.
-2. **PII Isolation**: `Inquiry` (`senderEmail`, `message`) and `Appointment` (`clientEmail`, `notes`) contain PII and can only be read (`get` or `list`) by the document owner (`resource.data.ownerUid == request.auth.uid`) or a verified admin (`isAdmin()`).
-3. **Verified Authentication**: All client mutations require `request.auth != null && request.auth.token.email_verified == true`.
-4. **Strict Key & Size Enforcement**: Every create enforces exact required/allowed keys (`hasAll` + `hasOnly`) and bounded `.size()` checks matching `firebase-blueprint.json`.
+1. **Identity Integrity**: Public visitor submissions on `Inquiry` and `Appointment` enforce `ownerUid == 'public_guest'` when unauthenticated (or `request.auth.uid` if signed in), while all reads (`get`/`list`), updates, and deletes require `isAdmin()`.
+2. **PII Isolation**: `Inquiry` (`senderEmail`, `message`) and `Appointment` (`clientEmail`, `notes`) contain PII and can ONLY be read (`get` or `list`) by a verified admin (`isAdmin()`). Public visitors have write-only create access.
+3. **Verified Admin Authentication**: All read, update, delete, Calendar, and Gmail actions require `request.auth != null && request.auth.token.email_verified == true && isAdmin()`.
+4. **Strict Key & Size Enforcement**: Every create enforces exact required/allowed keys (`hasAll` + `hasOnly`), valid email regex, and bounded `.size()` checks matching `firebase-blueprint.json`.
 5. **Temporal Integrity**: `createdAt` and `updatedAt` must equal `request.time` on creation; `createdAt` is immutable on update and `updatedAt == request.time`.
-6. **Terminal State Locking & Admin-Only Scheduling**: Once an `Appointment` reaches `completed` or `cancelled`, non-admins cannot mutate it. Non-admins cannot alter `status` or `adminNotes` on `Inquiry`, and on `Appointment` only admins can accept (`confirmed`), counter-propose (`counter_proposed`), set `meetLink` / `calendarEventId`, or set `counterDate` / `counterTimeSlot` / `counterPlace` / `counterNote`.
+6. **Terminal State Locking & Admin-Only Scheduling**: Non-admins cannot update or delete any `Inquiry` or `Appointment` (`allow update, delete: if isAdmin()`). On creation, `status` is strictly locked to `'new'` / `'pending'`, `sentViaGmail == false`, and `meetLink` / `calendarEventId` / `counter*` must be empty.
 7. **Admin Bootstrapping**: Admin access requires `email_verified == true` and either membership in `/admins/{uid}` or matching the verified portfolio owner email (`soumyajit.scms@gmail.com` or `soumyajit.biswas.14444@gmail.com`).
 
 ## 2. The Dirty Dozen Adversarial Payloads
