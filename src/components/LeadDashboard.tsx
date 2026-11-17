@@ -38,7 +38,7 @@ import {
   buildInPersonCounterTemplate,
   buildVirtualMeetAcceptedTemplate,
   createCalendarAppointmentEvent,
-  sendMultipartGmail,
+  dispatchAppointmentEmail,
   type AppointmentEmailContext,
 } from '../lib/appointmentTemplates';
 import { PROFILE_LINKS } from '../data/portfolioData';
@@ -158,6 +158,14 @@ export function LeadDashboard({
   const [counterPlaceDraft, setCounterPlaceDraft] = useState('');
   const [counterNoteDraft, setCounterNoteDraft] = useState('');
   const [counterProcessing, setCounterProcessing] = useState(false);
+
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [createdMeetFallback, setCreatedMeetFallback] = useState<{
+    meetLink: string;
+    eventId: string;
+    mailtoHref: string;
+    clientEmail: string;
+  } | null>(null);
 
   const [socialPlatform, setSocialPlatform] = useState<'instagram' | 'linkedin'>('instagram');
   const [socialTitle, setSocialTitle] = useState('');
@@ -358,6 +366,8 @@ export function LeadDashboard({
     setAcceptDuration(30);
     setAcceptHostNote('');
     setAcceptAddCalendar(true);
+    setModalError(null);
+    setCreatedMeetFallback(null);
     setDashboardError(null);
   };
 
@@ -370,38 +380,42 @@ export function LeadDashboard({
       appt.counterNote ||
         'Based on my availability around that window, could we move our in-person meet to the date, time, and spot below?'
     );
+    setModalError(null);
+    setCreatedMeetFallback(null);
     setDashboardError(null);
   };
 
   const executeAcceptAppointment = async () => {
     if (!acceptTarget || !isAdmin || !user) return;
     const token = getGmailAccessToken();
-    if (!token) {
-      setDashboardError('Please click Reconnect Google Workspace first so Calendar and Gmail can dispatch invites.');
-      return;
-    }
-
     const ctx = normalizeAppointment(acceptTarget);
     const isVirtual = ctx.meetingMode === 'google_meet';
 
-    if (isVirtual && !hasCalendarAccessToken()) {
-      setDashboardError('Please click Reconnect Google Workspace to grant Calendar access for creating the Google Meet link.');
+    let generatedMeetLink = acceptTarget.meetLink || createdMeetFallback?.meetLink || '';
+    let generatedEventId = acceptTarget.calendarEventId || createdMeetFallback?.eventId || '';
+
+    const needsCalendarCreation =
+      (isVirtual && !generatedMeetLink) || (!isVirtual && acceptAddCalendar && !generatedEventId);
+
+    if (needsCalendarCreation && (!token || !hasCalendarAccessToken())) {
+      setModalError(
+        'Please click "Reconnect Workspace" above to grant Google Calendar & Gmail permissions before accepting.'
+      );
       return;
     }
 
     setAcceptProcessing(true);
-    setDashboardError(null);
+    setModalError(null);
+
+    let emailTpl = { subject: '', textBody: '', htmlBody: '' };
 
     try {
-      let generatedMeetLink = acceptTarget.meetLink || '';
-      let generatedEventId = acceptTarget.calendarEventId || '';
-
       const finalDate = acceptTarget.counterDate || acceptTarget.date;
       const finalTime = acceptTarget.counterTimeSlot || acceptTarget.timeSlot;
       const finalPlace =
         acceptTarget.counterPlace || acceptTarget.meetingPlace || 'Google Meet (Virtual)';
 
-      if (isVirtual || acceptAddCalendar) {
+      if (needsCalendarCreation && token) {
         const calResult = await createCalendarAppointmentEvent({
           accessToken: token,
           appt: ctx,
@@ -416,6 +430,15 @@ export function LeadDashboard({
         if (calResult.meetLink) {
           generatedMeetLink = calResult.meetLink;
         }
+
+        // Persist the Meet link and event ID right away so retries never duplicate the Calendar event
+        await updateDoc(doc(db, 'appointments', acceptTarget.id), {
+          ...buildLegacyBackfillFields(acceptTarget),
+          status: 'confirmed',
+          meetLink: generatedMeetLink,
+          calendarEventId: generatedEventId,
+          updatedAt: serverTimestamp(),
+        });
       }
 
       const ownerRecipients = Array.from(
@@ -426,38 +449,32 @@ export function LeadDashboard({
         )
       );
 
-      if (isVirtual) {
-        const emailTpl = buildVirtualMeetAcceptedTemplate({
-          appt: { ...ctx, date: finalDate, timeSlot: finalTime },
-          meetLink: generatedMeetLink,
-          durationMinutes: acceptDuration,
-          hostNote: acceptHostNote,
-        });
-        await sendMultipartGmail({
-          accessToken: token,
-          to: [ctx.clientEmail],
-          cc: ownerRecipients,
-          subject: emailTpl.subject,
-          textBody: emailTpl.textBody,
-          htmlBody: emailTpl.htmlBody,
-        });
-      } else {
-        const emailTpl = buildInPersonAcceptedTemplate({
-          appt: ctx,
-          finalDate,
-          finalTimeSlot: finalTime,
-          finalPlace,
-          hostNote: acceptHostNote,
-        });
-        await sendMultipartGmail({
-          accessToken: token,
-          to: [ctx.clientEmail],
-          cc: ownerRecipients,
-          subject: emailTpl.subject,
-          textBody: emailTpl.textBody,
-          htmlBody: emailTpl.htmlBody,
-        });
-      }
+      emailTpl = isVirtual
+        ? buildVirtualMeetAcceptedTemplate({
+            appt: { ...ctx, date: finalDate, timeSlot: finalTime },
+            meetLink: generatedMeetLink,
+            durationMinutes: acceptDuration,
+            hostNote: acceptHostNote,
+          })
+        : buildInPersonAcceptedTemplate({
+            appt: ctx,
+            finalDate,
+            finalTimeSlot: finalTime,
+            finalPlace,
+            hostNote: acceptHostNote,
+          });
+
+      const idToken = await user.getIdToken().catch(() => null);
+      const { via } = await dispatchAppointmentEmail({
+        accessToken: token,
+        idToken,
+        senderEmail: user.email || undefined,
+        clientEmail: ctx.clientEmail,
+        ownerRecipients,
+        subject: emailTpl.subject,
+        textBody: emailTpl.textBody,
+        htmlBody: emailTpl.htmlBody,
+      });
 
       await updateDoc(doc(db, 'appointments', acceptTarget.id), {
         ...buildLegacyBackfillFields(acceptTarget),
@@ -469,14 +486,28 @@ export function LeadDashboard({
 
       setFeedbackMsg(
         isVirtual
-          ? `Confirmed! Scheduled Google Meet link (${generatedMeetLink}) emailed to ${ctx.clientEmail} and you.`
-          : `In-person meeting confirmed and emailed to ${ctx.clientEmail} (and copied to you).`
+          ? `Confirmed! Scheduled Google Meet link (${generatedMeetLink}) emailed directly to ${ctx.clientEmail} via ${via === 'gmail' ? 'Gmail' : 'server relay'}.`
+          : `In-person meeting confirmed and emailed directly to ${ctx.clientEmail} via ${via === 'gmail' ? 'Gmail' : 'server relay'}.`
       );
+      setCreatedMeetFallback(null);
       setAcceptTarget(null);
     } catch (error: unknown) {
-      setDashboardError(
-        error instanceof Error ? error.message : 'Failed to confirm appointment and send email.'
-      );
+      const msg =
+        error instanceof Error ? error.message : 'Failed to confirm appointment and send email.';
+      setModalError(msg);
+      if (generatedMeetLink || emailTpl.subject) {
+        const mailtoHref = `mailto:${encodeURIComponent(
+          ctx.clientEmail
+        )}?subject=${encodeURIComponent(emailTpl.subject)}&body=${encodeURIComponent(
+          emailTpl.textBody
+        )}`;
+        setCreatedMeetFallback({
+          meetLink: generatedMeetLink,
+          eventId: generatedEventId,
+          mailtoHref,
+          clientEmail: ctx.clientEmail,
+        });
+      }
     } finally {
       setAcceptProcessing(false);
     }
@@ -485,22 +516,18 @@ export function LeadDashboard({
   const executeCounterProposal = async () => {
     if (!counterTarget || !isAdmin || !user) return;
     const token = getGmailAccessToken();
-    if (!token) {
-      setDashboardError('Please click Reconnect Google Workspace before sending the counter-proposal email.');
-      return;
-    }
 
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(counterDateDraft.trim())) {
-      setDashboardError('Please pick a valid proposed date (YYYY-MM-DD).');
+      setModalError('Please pick a valid proposed date (YYYY-MM-DD).');
       return;
     }
     if (counterTimeDraft.trim().length < 3 || counterPlaceDraft.trim().length < 2) {
-      setDashboardError('Please provide both a proposed time and place.');
+      setModalError('Please provide both a proposed time and place.');
       return;
     }
 
     setCounterProcessing(true);
-    setDashboardError(null);
+    setModalError(null);
 
     try {
       const ctx = normalizeAppointment(counterTarget);
@@ -527,10 +554,13 @@ export function LeadDashboard({
         )
       );
 
-      await sendMultipartGmail({
+      const idToken = await user.getIdToken().catch(() => null);
+      await dispatchAppointmentEmail({
         accessToken: token,
-        to: [ctx.clientEmail],
-        cc: ownerRecipients,
+        idToken,
+        senderEmail: user.email || undefined,
+        clientEmail: ctx.clientEmail,
+        ownerRecipients,
         subject: tpl.subject,
         textBody: tpl.textBody,
         htmlBody: tpl.htmlBody,
@@ -551,7 +581,7 @@ export function LeadDashboard({
       );
       setCounterTarget(null);
     } catch (error: unknown) {
-      setDashboardError(
+      setModalError(
         error instanceof Error ? error.message : 'Failed to send counter-proposal email.'
       );
     } finally {
@@ -1491,6 +1521,26 @@ export function LeadDashboard({
               </div>
             )}
 
+            {modalError && (
+              <div className="rounded-lg border border-red-300 dark:border-red-900/70 bg-red-50 dark:bg-red-950/40 p-3.5 text-xs text-red-700 dark:text-red-300 space-y-2.5">
+                <p className="font-semibold">Email dispatch issue: {modalError}</p>
+                {createdMeetFallback?.meetLink && (
+                  <div className="rounded-md border border-red-200 dark:border-red-800/70 bg-white dark:bg-zinc-900 p-2.5 space-y-2">
+                    <p className="font-mono text-[11px] text-zinc-700 dark:text-zinc-300 break-all">
+                      Calendar event saved with Meet link: {createdMeetFallback.meetLink}
+                    </p>
+                    <a
+                      href={createdMeetFallback.mailtoHref}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 text-white font-semibold text-[11px] hover:bg-blue-700"
+                    >
+                      <Mail className="w-3 h-3" />
+                      Send Manually to {createdMeetFallback.clientEmail}
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
@@ -1545,10 +1595,14 @@ export function LeadDashboard({
             <div className="flex justify-end gap-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
               <button
                 type="button"
-                onClick={() => setAcceptTarget(null)}
+                onClick={() => {
+                  setModalError(null);
+                  setCreatedMeetFallback(null);
+                  setAcceptTarget(null);
+                }}
                 className="px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 cursor-pointer"
               >
-                Cancel
+                {createdMeetFallback ? 'Close' : 'Cancel'}
               </button>
               <button
                 type="button"
@@ -1559,9 +1613,11 @@ export function LeadDashboard({
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 {acceptProcessing
                   ? 'Scheduling & Emailing...'
-                  : acceptTarget.meetingMode === 'in_person'
-                    ? 'Confirm & Send Email'
-                    : 'Confirm & Send Meet Link'}
+                  : createdMeetFallback
+                    ? 'Retry Email Dispatch'
+                    : acceptTarget.meetingMode === 'in_person'
+                      ? 'Confirm & Send Email'
+                      : 'Confirm & Send Meet Link'}
               </button>
             </div>
           </div>
@@ -1593,6 +1649,12 @@ export function LeadDashboard({
                   loading={authLoading}
                   label="Reconnect Gmail"
                 />
+              </div>
+            )}
+
+            {modalError && (
+              <div className="rounded-lg border border-red-300 dark:border-red-900/70 bg-red-50 dark:bg-red-950/40 p-3.5 text-xs text-red-700 dark:text-red-300">
+                {modalError}
               </div>
             )}
 

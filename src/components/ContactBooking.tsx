@@ -1,12 +1,25 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { type User } from 'firebase/auth';
-import { Calendar, CheckCircle2, Mail, MapPin, Send, Video } from 'lucide-react';
+import { Calendar, CheckCircle2, Clock, Mail, MapPin, Send, Video } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { PROFILE_LINKS } from '../data/portfolioData';
 
 interface ContactBookingProps {
   user?: User | null;
+}
+
+interface BookingReceipt {
+  bookingId: string;
+  clientName: string;
+  clientEmail: string;
+  meetingType: string;
+  meetingMode: 'google_meet' | 'in_person';
+  meetingPlace: string;
+  date: string;
+  timeSlot: string;
+  timezone: string;
+  ackEmailed: boolean;
 }
 
 const TOPICS = [
@@ -53,6 +66,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [bookingReceipt, setBookingReceipt] = useState<BookingReceipt | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -157,6 +171,9 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
     const docId = generateDocId('appt');
     const ownerUid = user?.emailVerified ? user.uid : 'public_guest';
 
+    const cleanTimezone = timezone.trim().slice(0, 60) || 'Europe/Berlin (CET)';
+    const cleanNotes = notes.trim().slice(0, 1000);
+
     try {
       await setDoc(doc(db, 'appointments', docId), {
         ownerUid,
@@ -167,8 +184,8 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
         meetingPlace: cleanPlace,
         date,
         timeSlot,
-        timezone: timezone.trim().slice(0, 60) || 'Europe/Berlin (CET)',
-        notes: notes.trim().slice(0, 1000),
+        timezone: cleanTimezone,
+        notes: cleanNotes,
         status: 'pending',
         meetLink: '',
         calendarEventId: '',
@@ -180,15 +197,48 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
         updatedAt: serverTimestamp(),
       });
 
+      let ackEmailed = false;
+      try {
+        const ackRes = await fetch('/api/appointments/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bookingId: docId,
+            clientName: cleanName,
+            clientEmail: cleanEmail,
+            meetingType,
+            meetingMode,
+            meetingPlace: cleanPlace,
+            date,
+            timeSlot,
+            timezone: cleanTimezone,
+            notes: cleanNotes,
+          }),
+        });
+        if (ackRes.ok) {
+          const ackJson = (await ackRes.json()) as { emailed?: boolean };
+          ackEmailed = Boolean(ackJson.emailed);
+        }
+      } catch {
+        // Acknowledgement receipt card on screen still confirms submission if email relay is offline
+      }
+
       setNotes('');
       if (meetingMode === 'in_person') {
         setMeetingPlace('');
       }
-      setSuccessMsg(
-        meetingMode === 'google_meet'
-          ? `Google Meet request saved for ${date} at ${timeSlot}. Once I accept, both of us will receive the scheduled Meet link at ${cleanEmail}.`
-          : `In-person request saved for ${date} at ${timeSlot} (${cleanPlace}). I will confirm or send a date, time, or place update to ${cleanEmail}.`
-      );
+      setBookingReceipt({
+        bookingId: docId,
+        clientName: cleanName,
+        clientEmail: cleanEmail,
+        meetingType,
+        meetingMode,
+        meetingPlace: cleanPlace,
+        date,
+        timeSlot,
+        timezone: cleanTimezone,
+        ackEmailed,
+      });
     } catch (error: unknown) {
       setErrorMsg(
         error instanceof Error ? error.message : 'Could not reserve that appointment slot.'
@@ -396,6 +446,78 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 {submitting ? 'Sending...' : 'Send Inquiry'}
               </button>
             </form>
+          ) : bookingReceipt ? (
+            <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-6 space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-mono uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      Request Received · Pending Approval
+                    </p>
+                    <h3 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">
+                      Thanks, {bookingReceipt.clientName} — your slot request is queued
+                    </h3>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-[11px] font-mono text-amber-800 dark:text-amber-300">
+                  <Clock className="w-3 h-3" />
+                  Pending Soumyajit’s Approval
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 text-xs space-y-2">
+                <div className="flex flex-wrap justify-between gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-800">
+                  <span className="text-zinc-500 dark:text-zinc-400">Reference ID</span>
+                  <span className="font-mono text-zinc-900 dark:text-zinc-100">
+                    {bookingReceipt.bookingId}
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400">Session</span>
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {bookingReceipt.meetingType}
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400">Format</span>
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {bookingReceipt.meetingMode === 'google_meet'
+                      ? 'Google Meet (Virtual)'
+                      : `In-Person — ${bookingReceipt.meetingPlace}`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400">Requested Window</span>
+                  <span className="font-mono tabular-nums text-zinc-900 dark:text-zinc-100">
+                    {bookingReceipt.date} · {bookingReceipt.timeSlot} ({bookingReceipt.timezone})
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="text-zinc-500 dark:text-zinc-400">Confirmation Email Target</span>
+                  <span className="font-mono text-zinc-900 dark:text-zinc-100">
+                    {bookingReceipt.clientEmail}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                {bookingReceipt.ackEmailed
+                  ? `An acknowledgement email has been sent to ${bookingReceipt.clientEmail}. `
+                  : `Your request is saved for review (${bookingReceipt.clientEmail}). `}
+                {bookingReceipt.meetingMode === 'google_meet'
+                  ? `Please hold tight until I accept your request—as soon as I approve, you will receive the final email with your scheduled Google Meet link at ${bookingReceipt.clientEmail}.`
+                  : `Please hold tight until I review availability—once approved (or if I suggest another date, time, or place), you will receive the update at ${bookingReceipt.clientEmail}.`}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setBookingReceipt(null)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                Book Another Slot
+              </button>
+            </div>
           ) : (
             <form onSubmit={handleAppointmentSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -38,6 +38,17 @@ function base64UrlEncodeUtf8(input: string): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+function base64EncodeUtf8Wrapped(input: string): string {
+  const normalized = input.replace(/\r?\n/g, '\r\n');
+  const bytes = new TextEncoder().encode(normalized);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const b64 = btoa(binary);
+  return b64.match(/.{1,76}/g)?.join('\r\n') || '';
+}
+
 function encodeRfc2047Subject(subject: string): string {
   // Encode non-ASCII subjects cleanly for Gmail headers
   if (/^[\x20-\x7E]*$/.test(subject)) return subject;
@@ -251,18 +262,35 @@ export async function createCalendarAppointmentEvent(params: {
 
 export async function sendMultipartGmail(params: {
   accessToken: string;
+  senderEmail?: string;
+  senderName?: string;
   to: string[];
   cc?: string[];
   subject: string;
   textBody: string;
   htmlBody: string;
 }): Promise<void> {
-  const { accessToken, to, cc = [], subject, textBody, htmlBody } = params;
+  const {
+    accessToken,
+    senderEmail,
+    senderName = 'Soumyajit Biswas',
+    to,
+    cc = [],
+    subject,
+    textBody,
+    htmlBody,
+  } = params;
   const boundary = `sb_boundary_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+  const cleanFromEmail = senderEmail?.trim();
+  const replyToEmail = cleanFromEmail || PROFILE_LINKS.email;
+
   const headers = [
+    ...(cleanFromEmail ? [`From: ${senderName} <${cleanFromEmail}>`] : []),
     `To: ${to.join(', ')}`,
     ...(cc.length > 0 ? [`Cc: ${cc.join(', ')}`] : []),
+    `Reply-To: ${replyToEmail}`,
+    `Date: ${new Date().toUTCString()}`,
     `Subject: ${encodeRfc2047Subject(subject)}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -273,15 +301,15 @@ export async function sendMultipartGmail(params: {
     '',
     `--${boundary}`,
     'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
+    'Content-Transfer-Encoding: base64',
     '',
-    textBody,
+    base64EncodeUtf8Wrapped(textBody),
     '',
     `--${boundary}`,
     'Content-Type: text/html; charset="UTF-8"',
-    'Content-Transfer-Encoding: 8bit',
+    'Content-Transfer-Encoding: base64',
     '',
-    htmlBody,
+    base64EncodeUtf8Wrapped(htmlBody),
     '',
     `--${boundary}--`,
   ].join('\r\n');
@@ -302,10 +330,142 @@ export async function sendMultipartGmail(params: {
     const apiMsg = errJson.error?.message || `Gmail API returned ${res.status}.`;
     throw new Error(
       res.status === 401 || res.status === 403
-        ? `Gmail permission missing or expired (${apiMsg}). Please reconnect Google Workspace below.`
+        ? `Gmail permission missing or Gmail API is not enabled (${apiMsg}). Reconnect Workspace or enable Gmail API in Google Cloud.`
         : apiMsg
     );
   }
+}
+
+async function sendViaServerNotify(params: {
+  idToken: string;
+  to: string[];
+  cc?: string[];
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+}): Promise<void> {
+  const res = await fetch('/api/appointments/notify', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.idToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: params.to,
+      cc: params.cc,
+      subject: params.subject,
+      textBody: params.textBody,
+      htmlBody: params.htmlBody,
+    }),
+  });
+
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => ({}));
+    throw new Error(errJson.error || `Server email relay returned ${res.status}.`);
+  }
+}
+
+export async function dispatchAppointmentEmail(params: {
+  accessToken: string | null;
+  idToken: string | null;
+  senderEmail?: string;
+  clientEmail: string;
+  ownerRecipients: string[];
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+}): Promise<{ via: 'gmail' | 'server' }> {
+  const {
+    accessToken,
+    idToken,
+    senderEmail,
+    clientEmail,
+    ownerRecipients,
+    subject,
+    textBody,
+    htmlBody,
+  } = params;
+
+  let via: 'gmail' | 'server' = 'gmail';
+  let gmailErrMsg = '';
+
+  if (accessToken) {
+    try {
+      // Send directly to the requester as a dedicated email so external delivery is never skipped
+      await sendMultipartGmail({
+        accessToken,
+        senderEmail,
+        to: [clientEmail],
+        subject,
+        textBody,
+        htmlBody,
+      });
+    } catch (err: unknown) {
+      gmailErrMsg = err instanceof Error ? err.message : 'Gmail dispatch failed.';
+      if (!idToken) {
+        throw new Error(gmailErrMsg);
+      }
+      try {
+        await sendViaServerNotify({
+          idToken,
+          to: [clientEmail],
+          subject,
+          textBody,
+          htmlBody,
+        });
+        via = 'server';
+      } catch (serverErr: unknown) {
+        const serverMsg = serverErr instanceof Error ? serverErr.message : '';
+        throw new Error(
+          serverMsg && !serverMsg.includes('not_configured') && !serverMsg.includes('not configured')
+            ? `${gmailErrMsg} (Server relay fallback also failed: ${serverMsg})`
+            : gmailErrMsg
+        );
+      }
+    }
+  } else if (idToken) {
+    await sendViaServerNotify({
+      idToken,
+      to: [clientEmail],
+      subject,
+      textBody,
+      htmlBody,
+    });
+    via = 'server';
+  } else {
+    throw new Error('Google Workspace session expired. Please reconnect Workspace.');
+  }
+
+  // Send a separate confirmation copy to owner addresses when they differ from clientEmail
+  const uniqueOwners = ownerRecipients.filter(
+    (email) => email.toLowerCase() !== clientEmail.toLowerCase()
+  );
+  if (uniqueOwners.length > 0) {
+    try {
+      if (via === 'gmail' && accessToken) {
+        await sendMultipartGmail({
+          accessToken,
+          senderEmail,
+          to: uniqueOwners,
+          subject: `[Sent Copy] ${subject}`,
+          textBody,
+          htmlBody,
+        });
+      } else if (idToken) {
+        await sendViaServerNotify({
+          idToken,
+          to: uniqueOwners,
+          subject: `[Sent Copy] ${subject}`,
+          textBody,
+          htmlBody,
+        });
+      }
+    } catch {
+      // Non-fatal: the primary email to the requester already succeeded
+    }
+  }
+
+  return { via };
 }
 
 function wrapHtmlShell(badgeLabel: string, heading: string, innerHtml: string): string {
