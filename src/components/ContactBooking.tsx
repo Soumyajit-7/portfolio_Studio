@@ -4,6 +4,8 @@ import { type User } from 'firebase/auth';
 import { Calendar, CheckCircle2, Clock, Mail, MapPin, Send, Video } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { PROFILE_LINKS } from '../data/portfolioData';
+import { UI_COPY } from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 interface ContactBookingProps {
   user?: User | null;
@@ -41,6 +43,9 @@ const TIME_SLOTS = ['09:30 CET', '11:30 CET', '14:00 CET', '16:30 CET', '18:30 C
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ContactBooking({ user = null }: ContactBookingProps) {
+  const { lang } = useLanguage();
+  const t = UI_COPY[lang].contact;
+
   const [activeTab, setActiveTab] = useState<'inquiry' | 'appointment'>('inquiry');
 
   const [senderName, setSenderName] = useState(user?.displayName || '');
@@ -89,17 +94,17 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
     const cleanEmail = senderEmail.trim().slice(0, 150);
 
     if (cleanName.length < 1) {
-      setErrorMsg('Please enter your name.');
+      setErrorMsg(t.errors.nameRequired);
       return;
     }
 
     if (!EMAIL_REGEX.test(cleanEmail)) {
-      setErrorMsg('Please provide a valid email address so I can reply.');
+      setErrorMsg(t.errors.emailInvalidInquiry);
       return;
     }
 
     if (message.trim().length < 5) {
-      setErrorMsg('Give me at least 5 characters so I know what we are talking about.');
+      setErrorMsg(t.errors.messageShort);
       return;
     }
 
@@ -124,13 +129,9 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
       setMessage('');
       setCompany('');
-      setSuccessMsg(
-        `Got it! Your inquiry landed straight in my inbox tracker—I will reply to ${cleanEmail} shortly.`
-      );
+      setSuccessMsg(t.inquirySuccess(cleanEmail));
     } catch (error: unknown) {
-      setErrorMsg(
-        error instanceof Error ? error.message : 'Something went wrong saving your inquiry.'
-      );
+      setErrorMsg(error instanceof Error ? error.message : t.errors.inquirySaveFail);
     } finally {
       setSubmitting(false);
     }
@@ -145,17 +146,17 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
     const cleanEmail = clientEmail.trim().slice(0, 150);
 
     if (cleanName.length < 1) {
-      setErrorMsg('Please enter your name.');
+      setErrorMsg(t.errors.nameRequired);
       return;
     }
 
     if (!EMAIL_REGEX.test(cleanEmail)) {
-      setErrorMsg('Please provide a valid email address to receive your invite or counter-proposal.');
+      setErrorMsg(t.errors.emailInvalidBooking);
       return;
     }
 
     if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date)) {
-      setErrorMsg('Please pick a valid date.');
+      setErrorMsg(t.errors.dateInvalid);
       return;
     }
 
@@ -163,7 +164,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
       meetingMode === 'in_person' ? meetingPlace.trim().slice(0, 200) : 'Google Meet (Virtual)';
 
     if (meetingMode === 'in_person' && cleanPlace.length < 2) {
-      setErrorMsg('Please enter a preferred place or city for an in-person meeting.');
+      setErrorMsg(t.errors.placeShort);
       return;
     }
 
@@ -240,9 +241,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
         ackEmailed,
       });
     } catch (error: unknown) {
-      setErrorMsg(
-        error instanceof Error ? error.message : 'Could not reserve that appointment slot.'
-      );
+      setErrorMsg(error instanceof Error ? error.message : t.errors.bookingFail);
     } finally {
       setSubmitting(false);
     }
@@ -259,21 +258,20 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
         {/* Left info column */}
         <div className="lg:col-span-5 space-y-6">
           <div>
-            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-              05. Say Hello or Book a Call
-            </p>
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">{t.kicker}</p>
             <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 mb-4">
-              Got an ambitious build, freelance gig, or working-student role?
+              {t.headline}
             </h2>
             <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              Drop a quick note or book a Google Meet / in-person slot right here—no account
-              required. Everything lands directly in my lead dashboard so nothing gets buried.
+              {t.intro}
             </p>
           </div>
 
           <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800 text-sm">
             <div className="py-4">
-              <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">Direct Email</p>
+              <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">
+                {t.directEmail}
+              </p>
               <a
                 href={`mailto:${PROFILE_LINKS.email}`}
                 className="font-medium text-zinc-900 dark:text-zinc-100 hover:text-blue-600 dark:hover:text-blue-400"
@@ -283,19 +281,17 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
             </div>
             <div className="py-4">
               <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">
-                Base & Phone
+                {t.basePhone}
               </p>
               <p className="text-zinc-800 dark:text-zinc-200 tabular-nums">
-                54295 Trier, Germany · {PROFILE_LINKS.phone}
+                {t.baseLocation} · {PROFILE_LINKS.phone}
               </p>
             </div>
             <div className="py-4">
               <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">
-                Availability Window
+                {t.availabilityLabel}
               </p>
-              <p className="text-zinc-800 dark:text-zinc-200">
-                Starting Nov 2026 · 16–20 hours/week · Trier region or remote
-              </p>
+              <p className="text-zinc-800 dark:text-zinc-200">{t.availabilityValue}</p>
             </div>
           </div>
         </div>
@@ -318,7 +314,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 }`}
               >
                 <Mail className="w-3.5 h-3.5" />
-                Send Message
+                {t.tabInquiry}
               </button>
               <button
                 type="button"
@@ -334,13 +330,11 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 }`}
               >
                 <Calendar className="w-3.5 h-3.5" />
-                Book a Slot
+                {t.tabAppointment}
               </button>
             </div>
 
-            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-              No sign-in required · Replies go to your email
-            </p>
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">{t.noSignInHint}</p>
           </div>
 
           {errorMsg && (
@@ -361,7 +355,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Your Name
+                    {t.yourName}
                   </label>
                   <input
                     type="text"
@@ -375,7 +369,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Email Address
+                    {t.emailAddress}
                   </label>
                   <input
                     type="email"
@@ -392,29 +386,29 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Company / Team (Optional)
+                    {t.companyLabel}
                   </label>
                   <input
                     type="text"
                     maxLength={120}
                     value={company}
                     onChange={(e) => setCompany(e.target.value)}
-                    placeholder="Startup, Lab, or Solo"
+                    placeholder={t.companyPlaceholder}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    What’s This About?
+                    {t.topicLabel}
                   </label>
                   <select
                     value={topic}
                     onChange={(e) => setTopic(e.target.value as (typeof TOPICS)[number])}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   >
-                    {TOPICS.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {TOPICS.map((item) => (
+                      <option key={item} value={item}>
+                        {t.topics[item] || item}
                       </option>
                     ))}
                   </select>
@@ -423,7 +417,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  Message
+                  {t.messageLabel}
                 </label>
                 <textarea
                   rows={4}
@@ -432,7 +426,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                   maxLength={2000}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Tell me what you're building, hiring for, or curious about..."
+                  placeholder={t.messagePlaceholder}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
@@ -443,7 +437,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                {submitting ? 'Sending...' : 'Send Inquiry'}
+                {submitting ? t.sending : t.sendInquiry}
               </button>
             </form>
           ) : bookingReceipt ? (
@@ -453,48 +447,50 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs font-mono uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                      Request Received · Pending Approval
+                      {t.receipt.kicker}
                     </p>
                     <h3 className="font-display text-lg font-bold text-zinc-900 dark:text-zinc-100 mt-0.5">
-                      Thanks, {bookingReceipt.clientName} — your slot request is queued
+                      {t.receipt.title(bookingReceipt.clientName)}
                     </h3>
                   </div>
                 </div>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-[11px] font-mono text-amber-800 dark:text-amber-300">
                   <Clock className="w-3 h-3" />
-                  Pending Soumyajit’s Approval
+                  {t.receipt.statusBadge}
                 </span>
               </div>
 
               <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 text-xs space-y-2">
                 <div className="flex flex-wrap justify-between gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-800">
-                  <span className="text-zinc-500 dark:text-zinc-400">Reference ID</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">{t.receipt.refId}</span>
                   <span className="font-mono text-zinc-900 dark:text-zinc-100">
                     {bookingReceipt.bookingId}
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400">Session</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">{t.receipt.session}</span>
                   <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                    {bookingReceipt.meetingType}
+                    {t.meetingTypes[bookingReceipt.meetingType] || bookingReceipt.meetingType}
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400">Format</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">{t.receipt.format}</span>
                   <span className="font-medium text-zinc-900 dark:text-zinc-100">
                     {bookingReceipt.meetingMode === 'google_meet'
-                      ? 'Google Meet (Virtual)'
-                      : `In-Person — ${bookingReceipt.meetingPlace}`}
+                      ? t.receipt.formatVirtual
+                      : t.receipt.formatInPerson(bookingReceipt.meetingPlace)}
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400">Requested Window</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {t.receipt.requestedWindow}
+                  </span>
                   <span className="font-mono tabular-nums text-zinc-900 dark:text-zinc-100">
                     {bookingReceipt.date} · {bookingReceipt.timeSlot} ({bookingReceipt.timezone})
                   </span>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
-                  <span className="text-zinc-500 dark:text-zinc-400">Confirmation Email Target</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">{t.receipt.emailTarget}</span>
                   <span className="font-mono text-zinc-900 dark:text-zinc-100">
                     {bookingReceipt.clientEmail}
                   </span>
@@ -503,11 +499,11 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
               <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
                 {bookingReceipt.ackEmailed
-                  ? `An acknowledgement email has been sent to ${bookingReceipt.clientEmail}. `
-                  : `Your request is saved for review (${bookingReceipt.clientEmail}). `}
+                  ? t.receipt.ackSentPrefix(bookingReceipt.clientEmail)
+                  : t.receipt.ackSavedPrefix(bookingReceipt.clientEmail)}
                 {bookingReceipt.meetingMode === 'google_meet'
-                  ? `Please hold tight until I accept your request—as soon as I approve, you will receive the final email with your scheduled Google Meet link at ${bookingReceipt.clientEmail}.`
-                  : `Please hold tight until I review availability—once approved (or if I suggest another date, time, or place), you will receive the update at ${bookingReceipt.clientEmail}.`}
+                  ? t.receipt.waitMeet(bookingReceipt.clientEmail)
+                  : t.receipt.waitInPerson(bookingReceipt.clientEmail)}
               </p>
 
               <button
@@ -515,7 +511,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 onClick={() => setBookingReceipt(null)}
                 className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
-                Book Another Slot
+                {t.receipt.bookAnother}
               </button>
             </div>
           ) : (
@@ -523,7 +519,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Your Name
+                    {t.yourName}
                   </label>
                   <input
                     type="text"
@@ -537,7 +533,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Email Address
+                    {t.emailAddress}
                   </label>
                   <input
                     type="email"
@@ -553,7 +549,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                  Meeting Format
+                  {t.meetingFormat}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
@@ -573,9 +569,9 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                       }`}
                     />
                     <div>
-                      <p className="text-xs font-semibold">Google Meet (Virtual)</p>
+                      <p className="text-xs font-semibold">{t.googleMeetTitle}</p>
                       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                        Scheduled Meet link emailed to both of us upon approval.
+                        {t.googleMeetDesc}
                       </p>
                     </div>
                   </button>
@@ -597,9 +593,9 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                       }`}
                     />
                     <div>
-                      <p className="text-xs font-semibold">In-Person Meet</p>
+                      <p className="text-xs font-semibold">{t.inPersonTitle}</p>
                       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                        Suggest a venue; confirmed or countered via email.
+                        {t.inPersonDesc}
                       </p>
                     </div>
                   </button>
@@ -609,7 +605,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
               {meetingMode === 'in_person' && (
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Proposed Place / Venue
+                    {t.placeLabel}
                   </label>
                   <input
                     type="text"
@@ -618,7 +614,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                     maxLength={200}
                     value={meetingPlace}
                     onChange={(e) => setMeetingPlace(e.target.value)}
-                    placeholder="e.g., Universität Trier Campus, Hauptmarkt Café, or your office address"
+                    placeholder={t.placePlaceholder}
                     className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
@@ -627,7 +623,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Session Type
+                    {t.sessionType}
                   </label>
                   <select
                     value={meetingType}
@@ -638,14 +634,14 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                   >
                     {MEETING_TYPES.map((m) => (
                       <option key={m} value={m}>
-                        {m}
+                        {t.meetingTypes[m] || m}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Preferred Date
+                    {t.preferredDate}
                   </label>
                   <input
                     type="date"
@@ -658,7 +654,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                    Your Timezone
+                    {t.yourTimezone}
                   </label>
                   <input
                     type="text"
@@ -673,7 +669,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                  Pick a Time (Trier CET)
+                  {t.pickTime}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {TIME_SLOTS.map((slot) => (
@@ -695,14 +691,14 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
 
               <div>
                 <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                  Agenda Notes (Optional)
+                  {t.agendaLabel}
                 </label>
                 <textarea
                   rows={3}
                   maxLength={1000}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any links, context, or questions ahead of our chat..."
+                  placeholder={t.agendaPlaceholder}
                   className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-600"
                 />
               </div>
@@ -713,7 +709,7 @@ export function ContactBooking({ user = null }: ContactBookingProps) {
                 className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 transition-colors cursor-pointer"
               >
                 <Calendar className="w-4 h-4" />
-                {submitting ? 'Booking...' : 'Lock In Booking Request'}
+                {submitting ? t.booking : t.lockInBooking}
               </button>
             </form>
           )}

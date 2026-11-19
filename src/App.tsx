@@ -15,6 +15,7 @@ import { MarqueeRibbon } from './components/MarqueeRibbon';
 import { WorkSection } from './components/WorkSection';
 import { type SocialMilestone } from './data/portfolioData';
 import { db, isAdminUser, subscribeAuth } from './lib/firebase';
+import { LanguageProvider } from './lib/i18n';
 
 function PortfolioContent() {
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -135,9 +136,14 @@ function PortfolioContent() {
         )}
       </main>
 
-      <Footer onOpenDashboard={() => setActiveView('dashboard')} />
+      <Footer
+        activeView={activeView}
+        onOpenDashboard={() => setActiveView('dashboard')}
+      />
 
-      <ChatbotWidget isOpen={chatOpen} onToggle={setChatOpen} />
+      {activeView === 'portfolio' && (
+        <ChatbotWidget isOpen={chatOpen} onToggle={setChatOpen} />
+      )}
     </div>
   );
 }
@@ -145,9 +151,11 @@ function PortfolioContent() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <MotionConfig reducedMotion="user">
-        <PortfolioContent />
-      </MotionConfig>
+      <LanguageProvider>
+        <MotionConfig reducedMotion="user">
+          <PortfolioContent />
+        </MotionConfig>
+      </LanguageProvider>
     </ErrorBoundary>
   );
 }

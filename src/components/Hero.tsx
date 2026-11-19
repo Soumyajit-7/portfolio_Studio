@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import { ArrowDownRight, Download, Instagram, Linkedin } from 'lucide-react';
 import { PORTFOLIO_ASSETS, PROFILE_LINKS } from '../data/portfolioData';
+import { UI_COPY } from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 interface HeroProps {
   onOpenChat: () => void;
@@ -10,6 +12,8 @@ interface HeroProps {
 export function Hero({ onOpenChat }: HeroProps) {
   const containerRef = useRef<HTMLElement>(null);
   const [imgFailed, setImgFailed] = useState(false);
+  const { lang } = useLanguage();
+  const t = UI_COPY[lang].hero;
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -35,7 +39,7 @@ export function Hero({ onOpenChat }: HeroProps) {
         >
           <div>
             <p className="text-xs font-mono tracking-wide text-zinc-500 dark:text-zinc-400 mb-5">
-              Trier, Germany · Co-Founder at Choreos Labs · M.Sc. Data Science · Sports & Trail Addict
+              {t.kicker}
             </p>
 
             <h1
@@ -45,13 +49,11 @@ export function Hero({ onOpenChat }: HeroProps) {
                 textWrap: 'balance',
               }}
             >
-              I build systems that think, co-found startups that ship, and still make dawn track sprints.
+              {t.headline}
             </h1>
 
             <p className="text-base sm:text-lg text-zinc-600 dark:text-zinc-400 leading-relaxed max-w-2xl mb-8">
-              Please don’t put me in a single box like “data scientist.” I started out wrenching
-              through Mechanical Engineering, got hooked on deep learning and thermal cameras in
-              steel plants, co-founded{' '}
+              {t.bioBeforeLink}
               <a
                 href={PROFILE_LINKS.choreosLabs}
                 target="_blank"
@@ -60,7 +62,7 @@ export function Hero({ onOpenChat }: HeroProps) {
               >
                 Choreos Labs
               </a>
-              , and now I’m decoding Germany while pursuing my Master’s at Universität Trier.
+              {t.bioAfterLink}
             </p>
 
             <div className="flex flex-wrap items-center gap-3 mb-10">
@@ -70,14 +72,14 @@ export function Hero({ onOpenChat }: HeroProps) {
                 className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors whitespace-nowrap shrink-0"
               >
                 <Download className="w-4 h-4" />
-                Grab My CV
+                {t.grabCv}
               </a>
 
               <a
                 href="#contact"
                 className="inline-flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors whitespace-nowrap shrink-0"
               >
-                Book a Project / Interview
+                {t.bookProject}
                 <ArrowDownRight className="w-4 h-4" />
               </a>
 
@@ -86,7 +88,7 @@ export function Hero({ onOpenChat }: HeroProps) {
                 onClick={onOpenChat}
                 className="inline-flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-lg text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                Talk to My AI Stand-In
+                {t.talkAi}
               </button>
             </div>
           </div>
@@ -137,7 +139,7 @@ export function Hero({ onOpenChat }: HeroProps) {
             {!imgFailed ? (
               <img
                 src={PORTFOLIO_ASSETS.heroPortrait}
-                alt="Soumyajit Biswas portrait"
+                alt={t.portraitAlt}
                 referrerPolicy="no-referrer"
                 onError={() => setImgFailed(true)}
                 style={{
@@ -157,10 +159,10 @@ export function Hero({ onOpenChat }: HeroProps) {
 
           <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 text-left">
             <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-0.5">
-              Available Nov 2026 · 16–20 hrs/week · Trier or Remote
+              {t.availabilityLine}
             </p>
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Soumyajit Biswas — Builder, Co-Founder, Sports Addict
+              {t.portraitCaption}
             </p>
           </div>
         </motion.div>
@@ -171,38 +173,14 @@ export function Hero({ onOpenChat }: HeroProps) {
         style={{ y: kpiY }}
         className="mt-12 grid grid-cols-2 lg:grid-cols-4 border border-zinc-200 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900/60 divide-y sm:divide-y-0 sm:divide-x divide-zinc-200 dark:divide-zinc-800"
       >
-        <div className="p-6">
-          <p className="font-mono text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
-            92%
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Thermal Vision Precision · Steelworks Floor
-          </p>
-        </div>
-        <div className="p-6">
-          <p className="font-mono text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
-            50+
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Cognitive Modes Shipped · Inference App
-          </p>
-        </div>
-        <div className="p-6">
-          <p className="font-mono text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
-            3 Disciplines
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Mechanical Eng · IT · Data Science
-          </p>
-        </div>
-        <div className="p-6">
-          <p className="font-mono text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
-            Nov 2026
-          </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Ready for Working-Student & Freelance Work
-          </p>
-        </div>
+        {t.kpis.map((kpi) => (
+          <div key={kpi.value} className="p-6">
+            <p className="font-mono text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
+              {kpi.value}
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{kpi.label}</p>
+          </div>
+        ))}
       </motion.div>
     </section>
   );

@@ -2,19 +2,29 @@ import { useRef, useState } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import { ArrowUpRight, Instagram, Linkedin } from 'lucide-react';
 import {
-  ADVENTURE_SNAPSHOTS,
-  CURRENT_FOCUS_ITEMS,
-  DEFAULT_SOCIAL_MILESTONES,
   PORTFOLIO_ASSETS,
   PROFILE_LINKS,
   type SocialMilestone,
 } from '../data/portfolioData';
+import {
+  getAdventureSnapshots,
+  getCurrentFocus,
+  getDefaultSocialMilestones,
+  UI_COPY,
+} from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 interface ActivityPulseProps {
   socialUpdates: SocialMilestone[];
 }
 
 export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
+  const { lang } = useLanguage();
+  const t = UI_COPY[lang].ventures;
+  const currentFocusItems = getCurrentFocus(lang);
+  const adventureSnapshots = getAdventureSnapshots(lang);
+  const defaultMilestones = getDefaultSocialMilestones(lang);
+
   const [socialFilter, setSocialFilter] = useState<'all' | 'instagram' | 'linkedin'>('all');
   const choreosRef = useRef<HTMLDivElement>(null);
   const adventureRef = useRef<HTMLDivElement>(null);
@@ -31,7 +41,7 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
   });
   const reelParallax = useTransform(adventureScroll, [0, 1], [18, -18]);
 
-  const combinedSocial = socialUpdates.length > 0 ? socialUpdates : DEFAULT_SOCIAL_MILESTONES;
+  const combinedSocial = socialUpdates.length > 0 ? socialUpdates : defaultMilestones;
   const visibleSocial =
     socialFilter === 'all'
       ? combinedSocial
@@ -46,11 +56,9 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
       <div ref={choreosRef}>
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
-            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-              03. Startup & Current Orbit
-            </p>
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">{t.kicker1}</p>
             <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Choreos Labs & what I’m building right now
+              {t.headline1}
             </h2>
           </div>
 
@@ -100,22 +108,18 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
                     Choreos Labs Pvt. Ltd.
                   </h3>
                   <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                    Co-Founded with Soumyadeb Saha · Cognitive Performance Tech
+                    {t.choreosSub}
                   </p>
                 </div>
               </div>
 
               <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed mb-4">
-                We started Choreos Labs around one simple bet: training your brain shouldn’t feel
-                like doing taxes—it should feel like competing in a sport. Together we built{' '}
+                {t.choreosP1Before}
                 <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Inference</strong>
-                , a native Android platform with 50+ high-tempo cognitive games, tactical puzzles,
-                and competitive reaction drills.
+                {t.choreosP1After}
               </p>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                My side of the ring: Kotlin mobile architecture, Python API services, PostgreSQL &
-                Redis inside Docker containers, and shipping private alpha/beta builds on Google
-                Cloud.
+                {t.choreosP2}
               </p>
             </div>
 
@@ -138,14 +142,14 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
             <p className="absolute bottom-4 left-5 right-5 text-xs font-mono text-zinc-200">
-              Inference · Choreos Labs Cognitive Performance Platform
+              {t.choreosImageCaption}
             </p>
           </div>
         </motion.div>
 
         {/* Currently Working On Strip */}
         <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          {CURRENT_FOCUS_ITEMS.map((item, idx) => (
+          {currentFocusItems.map((item, idx) => (
             <motion.div
               key={item.title}
               initial={{ opacity: 0, y: 18 }}
@@ -170,11 +174,9 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
       <div ref={adventureRef}>
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
           <div>
-            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-              04. Off the Clock · Sports, Extreme Adventure & Travel
-            </p>
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">{t.kicker2}</p>
             <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Life outside the terminal (@fr_soumyajit)
+              {t.headline2}
             </h2>
           </div>
 
@@ -185,7 +187,7 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
           >
             <Instagram className="w-3.5 h-3.5" />
-            See Full Feed @fr_soumyajit
+            {t.seeFullFeed}
           </a>
         </div>
 
@@ -195,7 +197,7 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
             style={{ y: reelParallax }}
             className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4"
           >
-            {ADVENTURE_SNAPSHOTS.map((snap, idx) => (
+            {adventureSnapshots.map((snap, idx) => (
               <motion.a
                 key={snap.id}
                 href={snap.instagramUrl}
@@ -247,11 +249,9 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
               <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-zinc-200 dark:border-zinc-800">
                 <div>
                   <h3 className="font-display text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                    Recent Notes & Updates
+                    {t.recentNotes}
                   </h3>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Synced from LinkedIn & Instagram
-                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">{t.syncedSub}</p>
                 </div>
 
                 <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
@@ -266,7 +266,7 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
                           : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
                       }`}
                     >
-                      {tab}
+                      {tab === 'all' ? t.tabAll : tab}
                     </button>
                   ))}
                 </div>
@@ -322,7 +322,7 @@ export function ActivityPulse({ socialUpdates }: ActivityPulseProps) {
                 className="inline-flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400"
               >
                 <Linkedin className="w-3.5 h-3.5" />
-                LinkedIn Profile
+                {t.linkedinProfile}
               </a>
             </div>
           </div>

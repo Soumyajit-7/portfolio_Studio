@@ -160,8 +160,9 @@ async function startServer() {
 
   app.post('/api/chat', async (req, res) => {
     try {
-      const { messages } = req.body as {
+      const { messages, language } = req.body as {
         messages?: Array<{ role: 'user' | 'model'; text: string }>;
+        language?: 'en' | 'de';
       };
 
       if (!Array.isArray(messages) || messages.length === 0) {
@@ -184,11 +185,16 @@ async function startServer() {
         parts: [{ text: String(m.text || '').slice(0, 4000) }],
       }));
 
+      const languageNote =
+        language === 'de'
+          ? '\n\nThe visitor is currently viewing the German (Deutsch) version of the portfolio. Reply in natural, conversational German unless they explicitly write in English.'
+          : '';
+
       const chat = ai.chats.create({
         model: 'gemini-4-hydrogen',
         history: priorHistory,
         config: {
-          systemInstruction: SOUMYAJIT_SYSTEM_INSTRUCTION,
+          systemInstruction: `${SOUMYAJIT_SYSTEM_INSTRUCTION}${languageNote}`,
         },
       });
 

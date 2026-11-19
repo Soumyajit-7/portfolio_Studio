@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import { ArrowUpRight, ExternalLink, X } from 'lucide-react';
-import { CASE_STUDIES, type ProjectCaseStudy } from '../data/portfolioData';
+import { type ProjectCaseStudy } from '../data/portfolioData';
+import { getCaseStudies, UI_COPY } from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 type CategoryFilter = 'All' | 'Applied AI' | 'Systems & Mobile' | 'Sports & Hardware';
 
@@ -13,9 +15,17 @@ const CATEGORIES: CategoryFilter[] = [
 ];
 
 export function WorkSection() {
+  const { lang } = useLanguage();
+  const t = UI_COPY[lang].work;
+  const caseStudies = getCaseStudies(lang);
+
   const [filter, setFilter] = useState<CategoryFilter>('All');
-  const [selectedProject, setSelectedProject] = useState<ProjectCaseStudy | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
+
+  const selectedProject: ProjectCaseStudy | null = selectedProjectId
+    ? caseStudies.find((p) => p.id === selectedProjectId) ?? null
+    : null;
 
   const { scrollYProgress } = useScroll({
     target: sectionRef,
@@ -26,20 +36,20 @@ export function WorkSection() {
   const driftDown = useTransform(scrollYProgress, [0, 1], [-14, 18]);
 
   useEffect(() => {
-    if (!selectedProject) return;
+    if (!selectedProjectId) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setSelectedProject(null);
+        setSelectedProjectId(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedProject]);
+  }, [selectedProjectId]);
 
   const visibleProjects =
     filter === 'All'
-      ? CASE_STUDIES
-      : CASE_STUDIES.filter((project) => project.category === filter);
+      ? caseStudies
+      : caseStudies.filter((project) => project.category === filter);
 
   return (
     <section
@@ -49,18 +59,16 @@ export function WorkSection() {
     >
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10">
         <div>
-          <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-            01. Things I Have Actually Built
-          </p>
+          <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">{t.kicker}</p>
           <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Less buzzword bingo, more working hardware & shipped code
+            {t.headline}
           </h2>
         </div>
 
         {/* Interactive segmented filter bar */}
         <div
           role="tablist"
-          aria-label="Filter projects by discipline"
+          aria-label={t.filterAria}
           className="inline-flex flex-wrap items-center gap-1 p-1 rounded-lg bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
         >
           {CATEGORIES.map((category) => (
@@ -76,7 +84,7 @@ export function WorkSection() {
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
               }`}
             >
-              {category}
+              {t.categories[category] || category}
             </button>
           ))}
         </div>
@@ -97,7 +105,7 @@ export function WorkSection() {
             whileInView={{ opacity: 1, y: 0, scale: 1 }}
             viewport={{ once: true, margin: '-60px' }}
             transition={{ duration: 0.45, delay: idx * 0.05, ease: [0.16, 1, 0.3, 1] }}
-            onClick={() => setSelectedProject(project)}
+            onClick={() => setSelectedProjectId(project.id)}
             className={`group relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 cursor-pointer flex flex-col justify-between transition-transform duration-200 hover:-translate-y-1 ${
               filter === 'All' && project.spanClass ? project.spanClass : ''
             }`}
@@ -123,7 +131,7 @@ export function WorkSection() {
             <div className="p-6 flex flex-col justify-between flex-1">
               <div>
                 <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 mb-2">
-                  <span>{project.category}</span>
+                  <span>{t.categories[project.category] || project.category}</span>
                   <span aria-hidden="true">·</span>
                   <span className="tabular-nums">{project.year}</span>
                   <span aria-hidden="true">·</span>
@@ -149,7 +157,7 @@ export function WorkSection() {
       {selectedProject && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 sm:p-6"
-          onClick={() => setSelectedProject(null)}
+          onClick={() => setSelectedProjectId(null)}
         >
           <div
             className="max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100"
@@ -164,8 +172,8 @@ export function WorkSection() {
               />
               <button
                 type="button"
-                onClick={() => setSelectedProject(null)}
-                aria-label="Close case study"
+                onClick={() => setSelectedProjectId(null)}
+                aria-label={t.closeCaseStudy}
                 className="absolute top-4 right-4 h-10 w-10 rounded-lg bg-black/70 text-white flex items-center justify-center hover:bg-black transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -175,7 +183,8 @@ export function WorkSection() {
             <div className="p-6 sm:p-8 space-y-6">
               <div>
                 <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-                  {selectedProject.category} · {selectedProject.role} · {selectedProject.year}
+                  {t.categories[selectedProject.category] || selectedProject.category} ·{' '}
+                  {selectedProject.role} · {selectedProject.year}
                 </p>
                 <h3 className="font-display text-2xl sm:text-3xl font-bold mb-3">
                   {selectedProject.title}
@@ -186,7 +195,7 @@ export function WorkSection() {
               </div>
 
               <div className="border-t border-zinc-200 dark:border-zinc-800 pt-5">
-                <h4 className="text-sm font-semibold mb-3">How It Actually Came Together</h4>
+                <h4 className="text-sm font-semibold mb-3">{t.howItCameTogether}</h4>
                 <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
                   {selectedProject.highlights.map((item) => (
                     <li key={item} className="flex items-start gap-2.5">
@@ -208,7 +217,7 @@ export function WorkSection() {
                     rel="noreferrer"
                     className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                   >
-                    Visit Choreos Labs
+                    {t.visitChoreos}
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}

@@ -1,13 +1,15 @@
 import { motion, useScroll, useSpring, useTransform, useVelocity } from 'motion/react';
+import { UI_COPY } from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 export function MarqueeRibbon() {
+  const { lang } = useLanguage();
   const { scrollY } = useScroll();
   const scrollVelocity = useVelocity(scrollY);
   const smoothVelocity = useSpring(scrollVelocity, { stiffness: 120, damping: 24 });
   const scrollScrubX = useTransform(smoothVelocity, [-1800, 0, 1800], [-90, 0, 90]);
 
-  const phrase =
-    'Choreos Labs Co-Founder · Universität Trier · FLIR Thermal Vision · Sports & Extreme Trails · Kotlin & Python Systems · Coffee-Fueled Problem Solving · ';
+  const phrase = UI_COPY[lang].marquee;
 
   return (
     <div className="border-y border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/40 py-3.5 overflow-hidden select-none">

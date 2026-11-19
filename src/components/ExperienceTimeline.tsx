@@ -1,14 +1,22 @@
 import { useRef } from 'react';
 import { motion, useScroll, useSpring } from 'motion/react';
 import { ExternalLink } from 'lucide-react';
+import { PORTFOLIO_ASSETS } from '../data/portfolioData';
 import {
-  EDUCATION_LIST,
-  EXPERIENCE_LIST,
-  PORTFOLIO_ASSETS,
-  TECHNICAL_SKILLS,
-} from '../data/portfolioData';
+  getEducationList,
+  getExperienceList,
+  getTechnicalSkills,
+  UI_COPY,
+} from '../data/translations';
+import { useLanguage } from '../lib/i18n';
 
 export function ExperienceTimeline() {
+  const { lang } = useLanguage();
+  const t = UI_COPY[lang].story;
+  const experienceList = getExperienceList(lang);
+  const educationList = getEducationList(lang);
+  const technicalSkills = getTechnicalSkills(lang);
+
   const timelineRef = useRef<HTMLDivElement>(null);
 
   const { scrollYProgress } = useScroll({
@@ -36,17 +44,12 @@ export function ExperienceTimeline() {
           className="lg:col-span-5 space-y-8 lg:sticky lg:top-24"
         >
           <div>
-            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-              02. The Winding Route
-            </p>
+            <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">{t.kicker}</p>
             <h2 className="font-display text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 mb-4">
-              From mechanical calipers to steelworks vision and startup servers
+              {t.headline}
             </h2>
             <p className="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              My resume looks slightly chaotic until you realize the common thread: I love figuring
-              out how real-world systems break and building tools to fix them. Mechanical engineering
-              taught me physical tolerances; IT taught me software scale; Trier is where I sharpen
-              the math behind it all.
+              {t.intro}
             </p>
           </div>
 
@@ -54,7 +57,7 @@ export function ExperienceTimeline() {
             <div className="aspect-[4/3] overflow-hidden">
               <img
                 src={PORTFOLIO_ASSETS.storyWorkbench}
-                alt="Mechanical calipers, dark keyboard, espresso cup, and system architecture workstation"
+                alt={t.workbenchAlt}
                 loading="lazy"
                 decoding="async"
                 referrerPolicy="no-referrer"
@@ -63,22 +66,19 @@ export function ExperienceTimeline() {
             </div>
             <div className="p-5 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800">
               <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">
-                Default Habitat · Late-Night Builder
+                {t.workbenchTag}
               </p>
-              <p className="text-sm text-zinc-800 dark:text-zinc-200">
-                When I’m not tweaking pipelines or arguing with Docker containers, I’m training
-                dawn track splits, chasing steep ridges, or planning my next trip.
-              </p>
+              <p className="text-sm text-zinc-800 dark:text-zinc-200">{t.workbenchCaption}</p>
             </div>
           </div>
 
           {/* Skills Matrix */}
           <div className="space-y-4 pt-2">
             <h3 className="font-display text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-              Tools of the Trade
+              {t.toolsHeading}
             </h3>
             <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
-              {TECHNICAL_SKILLS.map((group) => (
+              {technicalSkills.map((group) => (
                 <div key={group.group} className="py-3.5">
                   <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-1">
                     {group.group}
@@ -96,7 +96,7 @@ export function ExperienceTimeline() {
         <div className="lg:col-span-7 space-y-12">
           <div>
             <h3 className="font-display text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-6">
-              Where I’ve Built Things
+              {t.experienceHeading}
             </h3>
 
             <div ref={timelineRef} className="relative pl-6 sm:pl-8">
@@ -113,7 +113,7 @@ export function ExperienceTimeline() {
               />
 
               <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
-                {EXPERIENCE_LIST.map((item, idx) => (
+                {experienceList.map((item, idx) => (
                   <motion.div
                     key={item.id}
                     initial={{ opacity: 0, x: 16 }}
@@ -151,7 +151,7 @@ export function ExperienceTimeline() {
                             rel="noreferrer"
                             className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline"
                           >
-                            Website <ExternalLink className="w-3 h-3" />
+                            {t.websiteLink} <ExternalLink className="w-3 h-3" />
                           </a>
                         </>
                       )}
@@ -172,10 +172,10 @@ export function ExperienceTimeline() {
 
           <div>
             <h3 className="font-display text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-6">
-              Degrees & Sanity Checks
+              {t.educationHeading}
             </h3>
             <div className="divide-y divide-zinc-200 dark:divide-zinc-800 border-y border-zinc-200 dark:border-zinc-800">
-              {EDUCATION_LIST.map((edu, idx) => (
+              {educationList.map((edu, idx) => (
                 <motion.div
                   key={edu.id}
                   initial={{ opacity: 0, y: 14 }}
@@ -202,12 +202,9 @@ export function ExperienceTimeline() {
               ))}
               <div className="py-5">
                 <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400 mb-2">
-                  Certifications & Spoken Languages
+                  {t.certHeading}
                 </p>
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                  DeepLearning.AI Mathematics for ML & Data Science (2025) · Google Cloud Production
-                  ML Systems (2025) · English (C1) · German (A1—getting better every espresso)
-                </p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300">{t.certBody}</p>
               </div>
             </div>
           </div>

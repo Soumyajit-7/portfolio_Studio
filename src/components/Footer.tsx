@@ -1,10 +1,17 @@
 import { PORTFOLIO_ASSETS, PROFILE_LINKS } from '../data/portfolioData';
+import { UI_COPY } from '../data/translations';
+import { useLanguage, type Language } from '../lib/i18n';
 
 interface FooterProps {
+  activeView: 'portfolio' | 'dashboard';
   onOpenDashboard: () => void;
 }
 
-export function Footer({ onOpenDashboard }: FooterProps) {
+export function Footer({ activeView, onOpenDashboard }: FooterProps) {
+  const { lang } = useLanguage();
+  const effectiveLang: Language = activeView === 'dashboard' ? 'en' : lang;
+  const t = UI_COPY[effectiveLang].footer;
+
   return (
     <footer className="border-t border-zinc-200 dark:border-zinc-800 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 text-xs text-zinc-500 dark:text-zinc-400">
@@ -12,7 +19,7 @@ export function Footer({ onOpenDashboard }: FooterProps) {
           <p className="font-display font-semibold text-sm text-zinc-900 dark:text-zinc-100">
             Soumyajit Biswas
           </p>
-          <p className="mt-1">54295 Trier, Germany · Co-Founder at Choreos Labs · Sports & Trail Addict</p>
+          <p className="mt-1">{t.tagline}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-5">
@@ -21,7 +28,7 @@ export function Footer({ onOpenDashboard }: FooterProps) {
             download="Soumyajit_Biswas_CV.pdf"
             className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
           >
-            Download CV
+            {t.downloadCv}
           </a>
           <a
             href={PROFILE_LINKS.choreosLabs}
@@ -59,7 +66,7 @@ export function Footer({ onOpenDashboard }: FooterProps) {
             href={`mailto:${PROFILE_LINKS.email}`}
             className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
           >
-            Email
+            {t.email}
           </a>
           <button
             type="button"
@@ -69,7 +76,7 @@ export function Footer({ onOpenDashboard }: FooterProps) {
             }}
             className="hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors cursor-pointer"
           >
-            Owner Portal
+            {t.ownerPortal}
           </button>
         </div>
       </div>
